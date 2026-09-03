@@ -1,0 +1,166 @@
+{
+  "kaynak": "data/samples/document_spec.py",
+  "yonetmelik_basligi": "KURUMSAL VERİ YÖNETİMİ VE AÇIK VERİ YÖNETMELİĞİ",
+  "belgeler": {
+    "2019": {
+      "pdf": "yonetmelik_2019.pdf",
+      "docx": "yonetmelik_2019.docx"
+    },
+    "2023": {
+      "pdf": "yonetmelik_2023.pdf",
+      "docx": "yonetmelik_2023.docx"
+    }
+  },
+  "maddeler": [
+    {
+      "id": "amac",
+      "change_type": "IDENTICAL",
+      "baslik": "Amaç",
+      "madde_no_2019": 1,
+      "madde_no_2023": 1,
+      "bolum_2019": "BİRİNCİ BÖLÜM",
+      "bolum_2023": "BİRİNCİ BÖLÜM",
+      "aciklama": "IDENTICAL: basit, kısaltma/sayı içermeyen değişmeyen madde."
+    },
+    {
+      "id": "kapsam",
+      "change_type": "IDENTICAL",
+      "baslik": "Kapsam",
+      "madde_no_2019": 2,
+      "madde_no_2023": 2,
+      "bolum_2019": "BİRİNCİ BÖLÜM",
+      "bolum_2023": "BİRİNCİ BÖLÜM",
+      "aciklama": "IDENTICAL: basit değişmeyen madde."
+    },
+    {
+      "id": "dayanak",
+      "change_type": "IDENTICAL",
+      "baslik": "Dayanak",
+      "madde_no_2019": 3,
+      "madde_no_2023": 3,
+      "bolum_2019": "BİRİNCİ BÖLÜM",
+      "bolum_2023": "BİRİNCİ BÖLÜM",
+      "aciklama": "IDENTICAL: içinde 'T.C.' kısaltması ve '5018 sayılı' gibi sayılar geçiyor -- normalizer/sentence_splitter'ın bunları yanlışlıkla cümle sonu sanmaması test edilir."
+    },
+    {
+      "id": "tanimlar",
+      "change_type": "MODIFIED",
+      "baslik": "Tanımlar",
+      "madde_no_2019": 4,
+      "madde_no_2023": 4,
+      "bolum_2019": "BİRİNCİ BÖLÜM",
+      "bolum_2023": "BİRİNCİ BÖLÜM",
+      "aciklama": "MODIFIED (ek filler): yeni bir tanım bendi (ç) eklenmiş."
+    },
+    {
+      "id": "veri_sorumlulugu",
+      "change_type": "IDENTICAL",
+      "baslik": "Veri Sorumluluğu",
+      "madde_no_2019": 5,
+      "madde_no_2023": 5,
+      "bolum_2019": "İKİNCİ BÖLÜM",
+      "bolum_2023": "İKİNCİ BÖLÜM",
+      "aciklama": "IDENTICAL: numarası değişmeyen, metni aynı kalan filler madde."
+    },
+    {
+      "id": "veri_paylasimi",
+      "change_type": "MODIFIED",
+      "baslik": "Veri Paylaşımı",
+      "madde_no_2019": 6,
+      "madde_no_2023": 6,
+      "bolum_2019": "İKİNCİ BÖLÜM",
+      "bolum_2023": "İKİNCİ BÖLÜM",
+      "aciklama": "MODIFIED (kritik test): fıkra (1) hem cümle içi ekleme ('Veri Yönetişim Kurulunun onayı alınması kaydıyla,') HEM DE anlamın tersine dönmesi ('paylaşılamaz' -> 'paylaşılabilir') içeriyor; fıkra (2) ise birebir aynı kalıyor -- differ'ın TÜM maddeyi değil sadece fıkra (1)'i değişmiş sayması gerekir."
+    },
+    {
+      "id": "veri_kalitesi",
+      "change_type": "MODIFIED",
+      "baslik": "Veri Kalitesi ve Güvenliği",
+      "madde_no_2019": 7,
+      "madde_no_2023": 7,
+      "bolum_2019": "İKİNCİ BÖLÜM",
+      "bolum_2023": "İKİNCİ BÖLÜM",
+      "aciklama": "MODIFIED (kritik test): UZUN madde, fıkra (1)-(3) birebir aynı, sadece fıkra (4) eklenmiş -- differ tüm maddeyi değişmiş saymamalı, sadece eklenen fıkrayı işaretlemeli."
+    },
+    {
+      "id": "arsivleme",
+      "change_type": "REMOVED",
+      "baslik": "Arşivleme Esasları",
+      "madde_no_2019": 8,
+      "madde_no_2023": null,
+      "bolum_2019": "İKİNCİ BÖLÜM",
+      "bolum_2023": null,
+      "aciklama": "REMOVED: 2023'te karşılığı yok; sonraki maddelerin numara kaymasına sebep olur."
+    },
+    {
+      "id": "birim_sorumluluklari",
+      "change_type": "MODIFIED",
+      "baslik": "Birim Sorumlulukları",
+      "madde_no_2019": 9,
+      "madde_no_2023": 8,
+      "bolum_2019": "ÜÇÜNCÜ BÖLÜM",
+      "bolum_2023": "ÜÇÜNCÜ BÖLÜM",
+      "aciklama": "MODIFIED + numara kayması (en sık karıştırılan durum): hem numarası (9->8) DEĞİŞMİŞ hem metni değişmiş -- eşleştirici bunu sadece numaraya bakarak DEĞİL, içerik benzerliğiyle bulmalı; RENUMBERED değil MODIFIED olarak sınıflandırılmalı çünkü metin de değişti."
+    },
+    {
+      "id": "ust_yonetim_sorumlulugu",
+      "change_type": "RENUMBERED",
+      "baslik": "Üst Yönetim Sorumluluğu",
+      "madde_no_2019": 10,
+      "madde_no_2023": 9,
+      "bolum_2019": "ÜÇÜNCÜ BÖLÜM",
+      "bolum_2023": "ÜÇÜNCÜ BÖLÜM",
+      "aciklama": "RENUMBERED (ek örnek): metin birebir aynı, sadece numara kaymış -- Yürürlük/Yürütme dışında, 'kısa olmayan' bir maddede de bu deseni test eder."
+    },
+    {
+      "id": "veri_yonetisim_kurulu",
+      "change_type": "ADDED",
+      "baslik": "Veri Yönetişim Kurulu",
+      "madde_no_2019": null,
+      "madde_no_2023": 10,
+      "bolum_2019": null,
+      "bolum_2023": "ÜÇÜNCÜ BÖLÜM",
+      "aciklama": "ADDED: 2019'da hiç karşılığı yok, tamamen yeni madde."
+    },
+    {
+      "id": "acik_veri_portali",
+      "change_type": "ADDED",
+      "baslik": "Açık Veri Portalı",
+      "madde_no_2019": null,
+      "madde_no_2023": 11,
+      "bolum_2019": null,
+      "bolum_2023": "ÜÇÜNCÜ BÖLÜM",
+      "aciklama": "ADDED: ikinci yeni madde."
+    },
+    {
+      "id": "yururlukten_kaldirilan",
+      "change_type": "RENUMBERED",
+      "baslik": "Yürürlükten Kaldırılan Mevzuat",
+      "madde_no_2019": 11,
+      "madde_no_2023": 12,
+      "bolum_2019": "DÖRDÜNCÜ BÖLÜM",
+      "bolum_2023": "DÖRDÜNCÜ BÖLÜM",
+      "aciklama": "RENUMBERED: metin aynı, numara 11->12 kaymış (madde eklenmesi nedeniyle)."
+    },
+    {
+      "id": "yururluk",
+      "change_type": "RENUMBERED",
+      "baslik": "Yürürlük",
+      "madde_no_2019": 12,
+      "madde_no_2023": 13,
+      "bolum_2019": "DÖRDÜNCÜ BÖLÜM",
+      "bolum_2023": "DÖRDÜNCÜ BÖLÜM",
+      "aciklama": "RENUMBERED (zorunlu örnek): KISA madde, metin birebir aynı, sadece numara kaymış -- MODIFIED sanılması en sık yapılan hatadır."
+    },
+    {
+      "id": "yurutme",
+      "change_type": "RENUMBERED",
+      "baslik": "Yürütme",
+      "madde_no_2019": 13,
+      "madde_no_2023": 14,
+      "bolum_2019": "DÖRDÜNCÜ BÖLÜM",
+      "bolum_2023": "DÖRDÜNCÜ BÖLÜM",
+      "aciklama": "RENUMBERED (zorunlu örnek): KISA madde, metin birebir aynı, sadece numara kaymış."
+    }
+  ]
+}
