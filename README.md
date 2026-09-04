@@ -33,22 +33,35 @@ pytest -v
 - [x] Adım 0: İskelet, requirements, config.py
 - [x] Adım 1: Ingestion (PDF/DOCX -> provenance'lı TextUnit) — 22 test geçiyor
 - [x] Adım 2: Structure parser (madde/bölüm hiyerarşisi) + cümle bölme — 51 test geçiyor
-- [ ] **Adım 3 (SIRADA): Matcher L1 — kural tabanlı eşleme** (madde/bölüm
-      numarası + başlık regex'i ile 2019/2023 Section'larını eşleştirme;
-      `src/analysis/section_matcher.py` + `tests/test_matcher.py`)
-- [ ] Adım 4: Matcher L2 — embedding + Hungarian atama + eşik kalibrasyonu
+- [x] Adım 3: Matcher L1 — kural tabanlı eşleme (`src/analysis/section_matcher.py`,
+      iki geçiş: aynı numara + çelişmeyen başlık, sonra benzersiz başlık eşleşmesi
+      RENUMBERED için) — 21 yeni test, toplam 72 test geçiyor
+- [ ] **Adım 4 (SIRADA): Matcher L2 — embedding + Hungarian atama + eşik kalibrasyonu**
+      (L1'in `unmatched_old`/`unmatched_new` çıktısı üzerinde çalışacak;
+      `SECTION_MATCH_MIN_COSINE_SIMILARITY` ve `EMBEDDING_MODEL_NAME` zaten
+      `src/config.py`'de tanımlı)
 - [ ] Adım 5: Differ — cümle/kelime diff + ChangeType sınıflandırma
 - [ ] Adım 6: Streamlit UI
 - [ ] Adım 7: Reporting — yönetici özeti + Excel/HTML dışa aktarım
 - [ ] Adım 8: Performans, hata yönetimi, testler
 
-### Adım 3'e başlarken dikkat edilecekler (Adım 2'den notlar)
+### Adım 4'e başlarken dikkat edilecekler (Adım 3'ten notlar)
 
-- `structure_parser.parse_structure()` her belge için `list[Section]` üretiyor
-  (`doc_id, heading_path, section_type, madde_no, baslik, order_index, units`).
-  L1 eşleştirici muhtemelen önce `madde_no` + `section_type` üzerinden
-  doğrudan eşleştirmeyi deneyecek (RENUMBERED/aynı-numara durumları), eşleşmeyenler
-  L2'ye (embedding) düşecek.
+- `match_sections(old_sections, new_sections) -> MatchResult` (`src/analysis/
+  section_matcher.py`), `matches: list[SectionMatch]` (`old`, `new`, `method`:
+  `"NUMBER_AND_TITLE"` | `"TITLE_ONLY"`) + `unmatched_old`/`unmatched_new`
+  döndürür. L1 SADECE yapısal sinyalle (numara + başlık metni) çalışır,
+  embedding KULLANMAZ; `unmatched_old`/`unmatched_new` "REMOVED/ADDED"
+  DEĞİLDİR — L2'nin embedding ile eşleşme denemesi başarısız olduktan SONRA
+  kesin karar verilir.
+- L1'in kasıtlı olarak ÇÖZMEDİĞİ (L2'ye bıraktığı) durum: hem numarası HEM
+  başlığı değişen maddeler (örn. yeniden yazılmış/yeniden adlandırılmış bir
+  madde) — bunlar `unmatched_old`/`unmatched_new`'de kalır, L2 embedding
+  benzerliğiyle bulmalı. Mevcut `ground_truth.json` bu senaryoyu içermiyor;
+  Adım 4 test verisine böyle bir örnek eklemek gerekebilir.
+- Aynı başlık her iki tarafta da BİRDEN FAZLA kez geçiyorsa (örn. iki farklı
+  maddenin başlığı tesadüfen aynıysa) L1 bilerek eşleştirmez (belirsizlik) —
+  L2 bu durumda embedding + Hungarian atama ile karar vermeli.
 - PDF'te reportlab bazen TEK bir paragrafın satır kaydırmasını sayfa
   SINIRI olmadan bile iki ayrı bloğa bölebiliyor (örn. "Veri Paylaşımı"
   madde 6, fıkra 1). `structure_parser` bunları doğru offsetlerle ayrı
