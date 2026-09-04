@@ -128,6 +128,91 @@ class TestMetricsDetailDataFrame:
         ]
 
 
+def _tek_maddelik_sonuc(metin: str, *, baslik: str = "Test") -> "ComparisonResult":
+    """Tek bir ADDED Section içeren minimal ComparisonResult -- güvenlik testleri için."""
+    from src.analysis.classifier import ClassifiedSection
+    from src.analysis.pipeline import ComparisonResult, ComparisonRow
+    from src.models import DocumentMeta, Section, TextUnit
+
+    unit = TextUnit(
+        doc_id="t", page_no=1, block_index=0, char_start=0, char_end=len(metin), heading_path=(), text=metin
+    )
+    section = Section(
+        doc_id="t", heading_path=("MADDE 1",), section_type="MADDE",
+        madde_no=1, baslik=baslik, order_index=0, units=[unit],
+    )
+    return ComparisonResult(
+        old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+        new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+        rows=[ComparisonRow(classified=ClassifiedSection(change_type=ChangeType.ADDED, old=None, new=section), section_diff=None)],
+    )
+
+
+class TestMetricsFormulaEnjeksiyonuKorumasi:
+    """
+    Güvenlik regresyon testleri (CWE-1236 / "CSV Injection"): belge
+    içeriğinden gelen bir madde metni "=", "+", "-" ya da "@" ile
+    BAŞLIYORSA (örn. bir liste öğesi "- İlgili birimler..." gibi doğal
+    biçimde bile olabilir), dışa aktarılan CSV/Excel'de bu bir FORMÜL
+    olarak yorumlanmamalı -- Excel/LibreOffice bu karakterleri hücre
+    başında formül tetikleyicisi sayar.
+    """
+
+    @pytest.mark.parametrize("tetikleyici", ["=", "+", "-", "@"])
+    def test_tehlikeli_karakterle_baslayan_metin_tek_tirnakla_kacirilir(self, tetikleyici):
+        tehlikeli = f"{tetikleyici}cmd|'/c calc'!A1"
+        result = _tek_maddelik_sonuc(tehlikeli)
+
+        df = build_detail_dataframe(result)
+
+        assert df.iloc[0]["Yeni Metin"] == f"'{tehlikeli}"
+
+    def test_zararsiz_metin_degistirilmeden_kalir(self):
+        result = _tek_maddelik_sonuc("(1) Kurum verileri paylaşılamaz.")
+
+        df = build_detail_dataframe(result)
+
+        assert df.iloc[0]["Yeni Metin"] == "(1) Kurum verileri paylaşılamaz."
+
+    def test_metin_ortasindaki_tehlikeli_karakter_dokunulmaz(self):
+        # NEDEN: formül yorumlanması SADECE hücrenin İLK karakteriyle
+        # ilgilidir -- metin içinde herhangi bir yerde "=" geçmesi risk
+        # OLUŞTURMAZ, gereksiz kaçırma OKUNABİLİRLİĞİ bozardı.
+        result = _tek_maddelik_sonuc("Bu madde x=5 formülünü içerir.")
+
+        df = build_detail_dataframe(result)
+
+        assert df.iloc[0]["Yeni Metin"] == "Bu madde x=5 formülünü içerir."
+
+    def test_baslik_ve_bolum_de_korunur(self):
+        result = _tek_maddelik_sonuc("normal metin", baslik="=HYPERLINK(\"http://kotu\")")
+
+        df = build_detail_dataframe(result)
+
+        assert df.iloc[0]["Başlık"] == "'=HYPERLINK(\"http://kotu\")"
+
+    def test_csv_disa_aktarimda_da_kacirilmis_halde_gorunur(self):
+        result = _tek_maddelik_sonuc("-Ilgili birimler bildirmekle yukumludur.")
+
+        csv_text = export_to_csv(result).decode("utf-8-sig")
+
+        assert "'-Ilgili birimler" in csv_text
+
+    def test_excel_disa_aktarimda_da_kacirilmis_halde_gorunur(self):
+        import openpyxl
+
+        result = _tek_maddelik_sonuc("=cmd|'/c calc'!A1")
+
+        xlsx_bytes = export_to_excel(result)
+        wb = openpyxl.load_workbook(BytesIO(xlsx_bytes))
+        detay = wb["Detay"]
+        header = [c.value for c in next(detay.iter_rows(min_row=1, max_row=1))]
+        row = [c.value for c in next(detay.iter_rows(min_row=2, max_row=2))]
+        deger = dict(zip(header, row))
+
+        assert deger["Yeni Metin"] == "'=cmd|'/c calc'!A1"
+
+
 class TestSummaryBuilderStats:
     def test_toplamlar_ground_truth_ile_esler(self):
         stats = build_summary_stats(_RESULT)

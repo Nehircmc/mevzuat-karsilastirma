@@ -31,6 +31,36 @@ _DETAIL_COLUMNS = [
     "Yeni Metin",
 ]
 
+# NEDEN: Excel/LibreOffice/Google Sheets, bir hücre "=", "+", "-" ya da "@"
+# ile BAŞLIYORSA bunu (dosya CSV olarak açıldığında ya da bazı akışlarda
+# .xlsx'te bile) bir FORMÜL sanabilir ("CSV/Formula Injection", CWE-1236).
+# Bu sütunlardaki metin KULLANICININ YÜKLEDİĞİ belgeden gelir -- bir madde
+# metni gayet doğal biçimde "- İlgili birim..." gibi bir liste öğesiyle
+# BAŞLAYABİLİR; bu tesadüfi içerik bile kötü niyetli bir formül gibi
+# yorumlanabilir. Kaçırılması gereken sütunlar SADECE belge içeriğinden
+# gelenlerdir -- "Değişim Türü" bizim ÜRETTİĞİMİZ sabit bir etikettir,
+# madde numaraları int/None'dır, bu yüzden ikisi de bu riski TAŞIMAZ.
+_FORMULA_INJECTION_TRIGGER_CHARS = ("=", "+", "-", "@")
+_SPREADSHEET_INJECTION_RISK_COLUMNS = (
+    "Başlık",
+    "Eski Bölüm",
+    "Yeni Bölüm",
+    "Eski Metin",
+    "Yeni Metin",
+)
+
+
+def _neutralize_formula_prefix(value: str) -> str:
+    """
+    Formül enjeksiyonuna karşı savunma: metin bir formül tetikleyici
+    karakterle başlıyorsa başına bir tek tırnak (') eklenir -- bu, Excel/
+    LibreOffice'i hücreyi DÜZ METİN olarak yorumlamaya zorlar; görünen
+    İÇERİĞİ (tek tırnak dışında) DEĞİŞTİRMEZ.
+    """
+    if value and value[0] in _FORMULA_INJECTION_TRIGGER_CHARS:
+        return f"'{value}"
+    return value
+
 
 def build_summary_dataframe(result: ComparisonResult) -> pd.DataFrame:
     """
@@ -54,7 +84,12 @@ def build_summary_dataframe(result: ComparisonResult) -> pd.DataFrame:
 
 
 def build_detail_dataframe(result: ComparisonResult) -> pd.DataFrame:
-    """Her karşılaştırma satırı (eşleşmiş ya da açıkta kalmış Section) için bir satır."""
+    """
+    Her karşılaştırma satırı (eşleşmiş ya da açıkta kalmış Section) için bir
+    satır. Belge içeriğinden gelen sütunlar (bkz.
+    _SPREADSHEET_INJECTION_RISK_COLUMNS) formül enjeksiyonuna karşı
+    kaçırılır (_neutralize_formula_prefix).
+    """
     rows = []
     for row in result.rows:
         c = row.classified
@@ -70,4 +105,7 @@ def build_detail_dataframe(result: ComparisonResult) -> pd.DataFrame:
                 "Yeni Metin": c.new.joined_text if c.new else "",
             }
         )
-    return pd.DataFrame(rows, columns=_DETAIL_COLUMNS)
+    df = pd.DataFrame(rows, columns=_DETAIL_COLUMNS)
+    for col in _SPREADSHEET_INJECTION_RISK_COLUMNS:
+        df[col] = df[col].map(_neutralize_formula_prefix)
+    return df
