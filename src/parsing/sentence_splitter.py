@@ -40,22 +40,28 @@ def _birim_uret(unit: TextUnit, local_start: int, local_end: int) -> TextUnit:
     )
 
 
-def split_sentences(unit: TextUnit) -> list[TextUnit]:
+def find_sentence_spans(text: str) -> list[tuple[int, int]]:
     """
-    Bir TextUnit'in metnini TR-duyarlı biçimde cümlelere böler.
+    Herhangi bir düz metindeki cümle sınırlarını TR-duyarlı biçimde
+    [start, end) aralıkları olarak döndürür (kırpılmış, boş cümleler atlanır).
+
+    NEDEN TextUnit'ten BAĞIMSIZ (saf string girdi/çıktı): bu fonksiyon hem
+    split_sentences() (TEK bir TextUnit için) hem de Adım 5'in differ.py'si
+    (bir Section'ın BİRLEŞTİRİLMİŞ -- muhtemelen birden fazla TextUnit'ten
+    oluşan -- gövde metni için) tarafından ORTAK kullanılır. NEDEN ortak
+    kaynak gerekli: kısaltma-duyarlı cümle sınırı kuralı TEK bir yerde
+    tanımlı olmalı (Adım 1'in document_spec.py'sindeki "tek kaynak" ilkesiyle
+    aynı gerekçe) -- aksi halde split_sentences ve differ farklı davranan
+    iki ayrı cümle bölme mantığı taşır ve sessizce tutarsızlaşabilir.
 
     NEDEN kısaltma kontrolü KELİME bazında (nokta bazında değil): "T.C."
     gibi birden fazla nokta içeren kısaltmalarda, her nokta ayrı ayrı değil,
     o noktanın ait olduğu TAM KELİME kısaltma listesine bakılarak
     değerlendirilir -- aksi halde "T.C." ortasındaki ilk nokta bile
     (kelimenin kendisi listede olsa dahi) yanlışlıkla cümle sonu sanılabilir.
-
-    Üretilen her cümle, KENDİ ebeveyni olan `unit`e göre offset taşır
-    (Mimari İlke A / provenance sözleşmesi).
     """
-    text = unit.text
     n = len(text)
-    sentences: list[TextUnit] = []
+    spans: list[tuple[int, int]] = []
     start = 0
 
     for match in _CUMLE_SONU_RE.finditer(text):
@@ -79,7 +85,7 @@ def split_sentences(unit: TextUnit) -> list[TextUnit]:
             rstrip_count = len(sentence_text) - len(sentence_text.rstrip())
             local_start = start + lstrip_count
             local_end = punct_end - rstrip_count
-            sentences.append(_birim_uret(unit, local_start, local_end))
+            spans.append((local_start, local_end))
         start = punct_end
 
     tail = text[start:]
@@ -88,6 +94,17 @@ def split_sentences(unit: TextUnit) -> list[TextUnit]:
         rstrip_count = len(tail) - len(tail.rstrip())
         local_start = start + lstrip_count
         local_end = n - rstrip_count
-        sentences.append(_birim_uret(unit, local_start, local_end))
+        spans.append((local_start, local_end))
 
-    return sentences
+    return spans
+
+
+def split_sentences(unit: TextUnit) -> list[TextUnit]:
+    """
+    Bir TextUnit'in metnini TR-duyarlı biçimde cümlelere böler.
+
+    Üretilen her cümle, KENDİ ebeveyni olan `unit`e göre offset taşır
+    (Mimari İlke A / provenance sözleşmesi). Sınır tespiti find_sentence_spans()
+    ile paylaşılır -- bkz. o fonksiyonun NEDEN notu.
+    """
+    return [_birim_uret(unit, start, end) for start, end in find_sentence_spans(unit.text)]

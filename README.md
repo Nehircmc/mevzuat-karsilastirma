@@ -42,15 +42,47 @@ pytest -v
       (`SECTION_MATCH_MIN_COSINE_SIMILARITY` 0.50 → **0.65**, gerçek bir yanlış
       pozitif ölçümüyle kalibre edildi, bkz. aşağıdaki not) — 15 yeni test,
       toplam 87 test geçiyor
-- [ ] **Adım 5 (SIRADA): Differ** — cümle/kelime diff + ChangeType sınıflandırma
-      (`SectionMatch` çiftleri üzerinde çalışacak; `IDENTICAL_COSINE_SIMILARITY_THRESHOLD`,
-      `RENUMBERED_CHAR_SIMILARITY_THRESHOLD`, `MOVED_MIN_POSITION_DELTA` zaten
-      `src/config.py`'de tanımlı)
-- [ ] Adım 6: Streamlit UI
+- [x] Adım 5: Differ (`src/analysis/differ.py`: Section'ın BİRLEŞTİRİLMİŞ gövde
+      metni üzerinden cümle bölme + difflib.SequenceMatcher ile cümle/kelime
+      hizalama) + Classifier (`src/analysis/classifier.py`: kapalı ChangeType
+      sözlüğüne karakter-benzerliği + numara + konum sinyaliyle atama) —
+      31 yeni test, toplam 118 test geçiyor
+- [ ] **Adım 6 (SIRADA): Streamlit UI**
 - [ ] Adım 7: Reporting — yönetici özeti + Excel/HTML dışa aktarım
 - [ ] Adım 8: Performans, hata yönetimi, testler
 
-### Adım 5'e başlarken dikkat edilecekler (Adım 4'ten notlar)
+### Adım 6'ya başlarken dikkat edilecekler (Adım 5'ten notlar)
+
+- `diff_section_match(match: SectionMatch) -> SectionDiff` (`src/analysis/
+  differ.py`), `sentence_diffs: list[SentenceDiff]` döndürür (`op`: `"equal"` |
+  `"replace"` | `"delete"` | `"insert"`; `"replace"` için `word_diffs:
+  list[WordDiff]` de dolu). `SectionDiff.is_identical` tüm cümlelerin `"equal"`
+  olup olmadığını söyler. Cümle bölme, `Section.units`'teki HER TextUnit'i AYRI
+  AYRI değil `section_sentences()` ile BİRLEŞTİRİLMİŞ metin üzerinden çalışır
+  (Adım 2'nin PDF sayfa-içi kırılma notunu çözer) — bir cümle birden fazla
+  orijinal TextUnit'ten geliyorsa (`DiffSentence.units`), her parça KENDİ
+  orijinal char_start/char_end'ine geri izlenebilir.
+- `classify_match(match: SectionMatch) -> ChangeType` (`src/analysis/
+  classifier.py`) SADECE karakter benzerliği (difflib, normalize edilmiş
+  metin) + `madde_no` eşitliği + `heading_path`/`order_index` konum sinyaliyle
+  çalışır — embedding/kosinüs benzerliği KULLANMAZ (L1 eşleşmelerinde embedder
+  hiç çağrılmamış olabilir, sınıflandırma bu opsiyonel veriye bağımlı
+  olmamalı). `classify_all(result: MatchResult) -> list[ClassifiedSection]`
+  hem eşleşenleri (IDENTICAL/MODIFIED/RENUMBERED/MOVED) hem
+  unmatched_old/unmatched_new'i (REMOVED/ADDED) TEK bir listede toplar; hiçbir
+  Section sessizce kaybolmaz (`test_classify_all_hicbir_sectioni_kaybetmez`).
+- **ÖNEMLİ SINIRLAMA (Adım 4'ten devam eden not):** `ground_truth.json`'da
+  gerçek bir MOVED örneği YOK — `_moved()` mantığı (heading_path bağlamı veya
+  `MOVED_MIN_POSITION_DELTA` kadar pozisyon kayması) sadece SENTETİK testlerle
+  doğrulandı, gerçek belge verisiyle değil. Aynı şekilde L2'nin gerçekten
+  çözmesi gereken pozitif bir embedding örneği de hâlâ yok (bkz. Adım 4 notu).
+  Reporting'e (Adım 7) geçmeden önce document_spec.py'ye MOVED + L2-pozitif
+  örnekleri eklemek düşünülmeli.
+- `src/parsing/sentence_splitter.py`'ye `find_sentence_spans(text: str) ->
+  list[tuple[int,int]]` eklendi (saf string, TextUnit'ten bağımsız) —
+  `split_sentences(unit)` VE `differ.section_sentences()` AYNI kısaltma-duyarlı
+  cümle sınırı mantığını buradan paylaşıyor (tek kaynak, Adım 1'in
+  document_spec.py ilkesiyle aynı gerekçe).
 
 - `match_sections(old_sections, new_sections, embedder=None, min_similarity=...) ->
   MatchResult`. `embedder` verilmezse (varsayılan `None`) davranış SADECE L1
