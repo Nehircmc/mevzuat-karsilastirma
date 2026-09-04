@@ -137,7 +137,21 @@ EMBEDDING_CACHE_DIR = CACHE_DIR / "embeddings"
 # NEDEN: Bu eşiğin altında kalan bir atama "eşleşme" değil "rastgele en
 # yakın komşu" anlamına gelir (Mimari İlke B) -- böyle çiftler ADDED/REMOVED
 # olarak bırakılmalı, zorla MODIFIED'a eşlenmemeli.
-SECTION_MATCH_MIN_COSINE_SIMILARITY = 0.50
+#
+# NEDEN 0.50 DEĞİL 0.65 (Adım 4 kalibrasyonu, EMBEDDING_MODEL_NAME ile
+# ÖLÇÜLDÜ): data/samples ground_truth.json'daki gerçek bir YANLIŞ POZİTİF
+# -- 2019 MADDE 8 "Arşivleme Esasları" (REMOVED) ile 2023 MADDE 11 "Açık
+# Veri Portalı" (ADDED) tamamen farklı konular olduğu hâlde, ikisi de kısa
+# ve ortak mevzuat kelime dağarcığı (örn. "veri", "ilgili", "Kurum")
+# paylaşan iki fıkralı maddeler olduğundan kosinüs benzerlikleri ~0.56'dır
+# -- eski eşik (0.50) bunu YANLIŞLIKLA eşleştirirdi. 0.65, bu ölçülen yanlış
+# pozitiften güvenli bir marj bırakır (bkz.
+# tests/test_matcher.py::TestGercekEmbedderEntegrasyonu). NOT: bu kalibrasyon
+# şu an SADECE bu negatif örneğe dayanıyor -- ground_truth.json'da L2'nin
+# GERÇEKTEN çözmesi gereken (hem numarası HEM başlığı değişmiş) bir POZİTİF
+# örnek YOK; gerçek belgelerle kullanılmaya başlandığında bu değer yeniden
+# gözden geçirilmeli.
+SECTION_MATCH_MIN_COSINE_SIMILARITY = 0.65
 
 # NEDEN: Normalize edilmiş metinler TAM AYNI değilse bile çok yüksek kosinüs
 # benzerliği + yüksek karakter benzerliği "pratikte aynı" (IDENTICAL) demektir;
