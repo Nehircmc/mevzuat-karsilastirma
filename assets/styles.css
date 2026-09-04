@@ -1,0 +1,40 @@
+/*
+Adım 6: DÜZEN (layout) CSS'i -- bilerek RENK içermez.
+
+NEDEN renk burada YOK: her ChangeType'ın rengi TEK KAYNAK olan
+src/config.py::COLOR_PALETTE'ten src/ui/styles.py::generate_color_css()
+tarafından ÜRETİLİR ve bu dosyayla BİRLİKTE enjekte edilir (bkz.
+styles.py::build_full_css). Renk burada elle de yazılsaydı, config.py'deki
+bir palet değişikliği bu dosyadaki ESKİ bir kopyayla sessizce çelişebilirdi.
+*/
+
+.mk-diff {
+    line-height: 1.6;
+}
+
+.mk-column {
+    border: 1px solid rgba(49, 51, 63, 0.15);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    height: 100%;
+    overflow-wrap: break-word;
+}
+
+.mk-section-header {
+    margin-bottom: 0.25rem;
+}
+
+.mk-badge {
+    display: inline-block;
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+.mk-empty-side {
+    color: rgba(49, 51, 63, 0.4);
+    font-style: italic;
+}

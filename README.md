@@ -28,6 +28,15 @@ python -m data.samples.generate_samples
 pytest -v
 ```
 
+## Uygulamayı Çalıştırma
+
+```bash
+streamlit run app.py
+```
+
+Tarayıcıda açılan sayfada eski ve yeni belgeyi (PDF/DOCX) yükleyin;
+madde/bölüm bazında renkli yan yana karşılaştırma otomatik oluşur.
+
 ## Durum
 
 - [x] Adım 0: İskelet, requirements, config.py
@@ -47,11 +56,57 @@ pytest -v
       hizalama) + Classifier (`src/analysis/classifier.py`: kapalı ChangeType
       sözlüğüne karakter-benzerliği + numara + konum sinyaliyle atama) —
       31 yeni test, toplam 118 test geçiyor
-- [ ] **Adım 6 (SIRADA): Streamlit UI**
-- [ ] Adım 7: Reporting — yönetici özeti + Excel/HTML dışa aktarım
+- [x] Adım 6: Streamlit UI — `app.py` (ince orkestrasyon, iş mantığı yok) +
+      `src/ui/components.py` (yükleme, metrik kartları, ChangeType filtresi,
+      yan yana görünüm + Streamlit'siz `compare_documents()` orkestrasyonu) +
+      `src/ui/styles.py`/`assets/styles.css` (renk `COLOR_PALETTE`'ten
+      üretilir, düzen statik dosyada) + `src/reporting/html_renderer.py`
+      (cümle/kelime diff'lerini renkli HTML'e çevirir) — 39 yeni test
+      (`streamlit.testing.v1.AppTest` ile gerçek yükleme dahil uçtan uca
+      test edildi + tarayıcıda görsel olarak doğrulandı), toplam 157 test
+      geçiyor
+- [ ] **Adım 7 (SIRADA): Reporting** — yönetici özeti + Excel/HTML dışa aktarım
 - [ ] Adım 8: Performans, hata yönetimi, testler
 
-### Adım 6'ya başlarken dikkat edilecekler (Adım 5'ten notlar)
+### Adım 7'ye başlarken dikkat edilecekler (Adım 6'dan notlar)
+
+- `src/ui/components.py::compare_documents(old_bytes, old_filename, new_bytes,
+  new_filename, use_embedder=False) -> ComparisonResult` TAM boru hattını
+  (ingestion → structure_parser → match_sections → classify_match +
+  diff_section_match) çalıştıran, Streamlit'e BAĞIMLI OLMAYAN saf bir
+  fonksiyondur — Adım 7'nin Excel/HTML dışa aktarımı da muhtemelen AYNI
+  `ComparisonResult`i (satır: `ClassifiedSection` + opsiyonel `SectionDiff`)
+  tüketmeli, tekrar boru hattı çalıştırmamalı.
+- `src/reporting/html_renderer.py` SINIF tabanlı HTML üretir (`mk-diff-<key>`,
+  `mk-badge-<key>`), INLINE stil değil — renkler SADECE `src/ui/styles.py::
+  generate_color_css()` ile `config.COLOR_PALETTE`'ten üretilir. Adım 7'nin
+  HTML dışa aktarımı bu HTML'i yeniden kullanabilir AMA çıktı dosyası
+  KENDİ BAŞINA (Streamlit'siz) açıldığında da renklerin görünmesi için
+  `styles.build_full_css()`'i `<style>` olarak GÖMMESİ gerekir (Streamlit
+  ortamı olmadan `st.markdown` enjeksiyonu çalışmaz).
+- `app.py` bilerek İŞ MANTIĞI BARINDIRMIYOR (Mimari İlke D, bkz.
+  `src/ingestion/base.py::DocumentLoader` NEDEN notu) — sadece
+  `components.py`/`styles.py` fonksiyonlarını çağırıyor. Adım 7 için de aynı
+  ilke geçerli: bir "Excel'e aktar" düğmesi eklenirse, üretim mantığı
+  `src/reporting/` altında SAF bir fonksiyonda olmalı, `app.py`'de değil.
+- **Streamlit sürüm notu:** `st.file_uploader(type=["pdf","docx"])` kısıtlaması
+  artık (streamlit 1.63) WIDGET DÜZEYİNDE uygulanıyor — desteklenmeyen bir
+  uzantı `app.py`'nin kodu HİÇ ÇALIŞMADAN reddediliyor (bkz.
+  `test_yukleme_alanlari_sadece_pdf_docx_kabul_eder`). `app.py`'deki
+  `except ValueError` bloğu bu yüzden normal kullanımda ERİŞİLEMEZ durumda
+  (savunma amaçlı bırakıldı) — asıl ValueError testi
+  `compare_documents()`'ı DOĞRUDAN çağıran birim testinde (bkz.
+  `tests/test_ui.py::TestCompareDocumentsGercekOrnekBelgelerle::
+  test_desteklenmeyen_uzanti_hata_verir`).
+- Uygulamayı çalıştırmak için: `streamlit run app.py` (bkz. bu dosyanın
+  "Uygulamayı Çalıştırma" bölümü).
+- **ÖNEMLİ SINIRLAMA (Adım 5'ten devam eden not):** `ground_truth.json`'da
+  hâlâ gerçek bir MOVED örneği ve L2'nin gerçekten çözmesi gereken pozitif
+  bir embedding örneği yok (bkz. Adım 4/5 notları) — bu, Adım 7'nin yönetici
+  özetinde "kaç madde MOVED/embedding ile bulundu" gibi bir istatistik
+  gösterilecekse gerçek veriyle doğrulanamayacağı anlamına gelir.
+
+### Adım 6'dan önceki notlar (Adım 5'ten)
 
 - `diff_section_match(match: SectionMatch) -> SectionDiff` (`src/analysis/
   differ.py`), `sentence_diffs: list[SentenceDiff]` döndürür (`op`: `"equal"` |
