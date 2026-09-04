@@ -172,6 +172,28 @@ class TestAppUctanUcaDumanTesti:
             at.multiselect(key="mk_change_type_filter").options
         )
 
+    def test_iki_belge_yuklendiginde_yonetici_ozeti_ve_indirme_dugmeleri_gorunur(self):
+        # NEDEN (Adım 7): Yönetici Özeti paneli VE Excel/CSV/HTML indirme
+        # düğmeleri app.py'ye entegre edildi -- bu, o entegrasyonun GERÇEKTEN
+        # çalıştığını (sadece izole exporter/summary_builder testlerinin
+        # değil) uçtan uca doğrular.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        summary_markdown = "\n".join(m.value for m in at.get("markdown"))
+        assert "Yönetici Özeti" in summary_markdown
+        assert "ÜÇÜNCÜ BÖLÜM" in summary_markdown
+
+        download_keys = {b.key for b in at.get("download_button")}
+        assert download_keys == {"mk_download_excel", "mk_download_csv", "mk_download_html"}
+
     def test_yukleme_alanlari_sadece_pdf_docx_kabul_eder(self):
         # NEDEN: st.file_uploader(type=["pdf","docx"]) kısıtlaması WIDGET
         # DÜZEYİNDE uygulanıyor -- desteklenmeyen bir uzantı app.py'nin iş

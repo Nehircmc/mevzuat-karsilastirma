@@ -22,6 +22,7 @@ from html import escape as _escape
 from src.analysis.differ import SectionDiff, SentenceDiff, WordDiff
 from src.config import CHANGE_TYPE_LABELS_TR, COLOR_PALETTE
 from src.models import ChangeType, Section
+from src.reporting.summary_builder import SummaryStats
 
 # NEDEN sadece bu üçü: cümle/kelime düzeyinde vurgulama SADECE "bu parça
 # eklendi/silindi/değişti" diyebilir -- IDENTICAL/MOVED/RENUMBERED tüm bir
@@ -133,6 +134,82 @@ def render_change_type_badge(change_type: ChangeType) -> str:
     css_key = _css_key(change_type.value)
     label = CHANGE_TYPE_LABELS_TR[change_type.value]
     return f'<span class="mk-badge mk-badge-{css_key}">{_escape(label)}</span>'
+
+
+def render_row_header_html(old: Section | None, new: Section | None, change_type: ChangeType) -> str:
+    """
+    Bir karşılaştırma satırının başlığını (MADDE no + başlık + rozet) render
+    eder -- src/ui/components.py (canlı Streamlit) VE src/reporting/exporter.py
+    (bağımsız HTML dışa aktarım) TARAFINDAN PAYLAŞILIR, NEDEN: ikisinin de
+    AYNI kaçırma (escape) ve biçimlendirme mantığına ihtiyacı var; ayrı ayrı
+    yazılsaydı biri escape'i UNUTABİLİRDİ (nitekim Adım 6'da başlık hiç
+    kaçırılmıyordu -- bu birleştirme o hatayı da düzeltir).
+    """
+    madde_no = old.madde_no if old else (new.madde_no if new else None)
+    baslik = (old.baslik if old else (new.baslik if new else None)) or ""
+    badge_html = render_change_type_badge(change_type)
+    return (
+        f'<div class="mk-section-header"><strong>MADDE {madde_no} — '
+        f"{_escape(baslik)}</strong> {badge_html}</div>"
+    )
+
+
+def render_row_body_html(
+    old: Section | None,
+    new: Section | None,
+    change_type: ChangeType,
+    section_diff: SectionDiff | None,
+) -> tuple[str, str]:
+    """
+    Bir karşılaştırma satırının (old_html, new_html) gövdesini render eder --
+    section_diff varsa cümle/kelime düzeyinde (render_section_diff_html),
+    yoksa (REMOVED/ADDED, karşılığı olmayan Section) TÜM metin tek renkte
+    (render_full_section_html).
+    """
+    if section_diff is not None:
+        return render_section_diff_html(section_diff)
+    old_html = render_full_section_html(old, change_type) if old else ""
+    new_html = render_full_section_html(new, change_type) if new else ""
+    return old_html, new_html
+
+
+def render_summary_html(stats: SummaryStats) -> str:
+    """
+    Yönetici Özeti'ni (bkz. src/reporting/summary_builder.py) bağımsız HTML
+    dışa aktarım için escape'li HTML'e çevirir.
+
+    NEDEN Markdown'dan DÖNÜŞTÜRMÜYORUZ (ör. bir markdown kütüphanesiyle):
+    proje bu bağımlılığı istemiyor (requirements.txt'te yok) VE render_summary_
+    markdown() SADECE Streamlit'in st.markdown'ı için tasarlandı -- burada
+    AYNI SummaryStats'tan DOĞRUDAN HTML üretmek, iki formatlayıcının (Markdown
+    ve HTML) birbirinden BAĞIMSIZ ama AYNI sayısal veriye dayanmasını sağlar.
+    """
+    parts = ['<div class="mk-summary">', "<h2>Yönetici Özeti</h2>"]
+    parts.append(
+        f"<p>Eski belgede <strong>{stats.eski_toplam_madde}</strong>, yeni "
+        f"belgede <strong>{stats.yeni_toplam_madde}</strong> madde bulundu; "
+        f"toplam <strong>{stats.toplam_karsilastirma}</strong> karşılaştırma "
+        "birimi sınıflandırıldı.</p>"
+    )
+    parts.append("<ul>")
+    for change_type in ChangeType:
+        count = stats.sayilar[change_type]
+        pct = stats.yuzdeler[change_type]
+        label = _escape(CHANGE_TYPE_LABELS_TR[change_type.value])
+        css_key = _css_key(change_type.value)
+        parts.append(
+            f'<li><span class="mk-badge mk-badge-{css_key}">{label}</span>: '
+            f"{count} madde (%{pct})</li>"
+        )
+    parts.append("</ul>")
+    if stats.en_cok_degisen_bolum is not None:
+        bolum, sayi = stats.en_cok_degisen_bolum
+        parts.append(
+            f"<p>En çok değişiklik <strong>{_escape(bolum)}</strong> "
+            f"bölümünde görüldü ({sayi} madde).</p>"
+        )
+    parts.append("</div>")
+    return "\n".join(parts)
 
 
 def known_palette_keys() -> frozenset[str]:

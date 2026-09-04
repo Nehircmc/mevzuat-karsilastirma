@@ -60,6 +60,12 @@ else:
             st.stop()
 
     components.render_metric_cards(result)
+    components.render_executive_summary(result)
+
+    st.divider()
+    components.render_download_buttons(result)
+    st.divider()
+
     selected_types = components.render_change_type_filter()
 
     st.divider()
