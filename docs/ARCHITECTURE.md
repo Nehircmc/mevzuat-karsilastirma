@@ -256,7 +256,45 @@ Ayrıntılı algoritma açıklaması ve gerçek kalibrasyon bulguları için bkz
   TAM uygulama akışı (yükleme → karşılaştırma → metrik → özet → indirme
   düğmeleri) doğrulanır — sadece izole birim testleri değil.
 
-## 6. Bilinen sınırlamalar
+## 6. Güvenlik
+
+Proje tamamlandıktan sonra tüm kod tabanı üzerinde bir güvenlik taraması
+yapıldı (kod deseni araması + `pip-audit` bağımlılık taraması + hedefli
+sızma denemeleri). Bulunanlar:
+
+| Vektör | Durum | Not |
+|---|---|---|
+| CSV/Excel formül enjeksiyonu (CWE-1236) | **Bulundu, düzeltildi** | `src/reporting/metrics.py::_neutralize_formula_prefix` — bkz. aşağı |
+| HTML/XSS (diff render) | Sorun yok | `html_renderer.py` HER metni `html.escape()` ile kaçırır (bkz. İlke A); `TestHtmlKacirma` bunu doğrular |
+| Path traversal (yüklenen dosya adı → geçici dosya) | Sorun yok | `pathlib.Path.suffix` yol ayracı (`/`) İÇEREN bir değer ASLA döndürmez — `../../evil.pdf` gibi bir ad sadece `.pdf` sonekini verir |
+| Bilinen CVE'li bağımlılık | Sorun yok | `pip-audit --strict`, kurulu TÜM paketlerde "No known vulnerabilities found" |
+| Sunucu iç dosya yolu sızıntısı | Sorun yok (Adım 8'de düzeltildi) | `_load_document`, hata mesajlarındaki geçici dosya yolunu kullanıcının yüklediği gerçek dosya adıyla değiştirir |
+| Kod enjeksiyonu (`eval`/`exec`/`pickle`/`subprocess`) | Kullanılmıyor | Kod tabanında bu API'lerin hiçbiri yok |
+| Sabit kodlanmış sır/kimlik bilgisi | Yok | Deseni taranan tüm dosyalarda bulunamadı |
+| Geçici dosya izinleri | Güvenli | `tempfile.NamedTemporaryFile` `0600` (sadece sahibi okur/yazar) oluşturur |
+
+**CSV/Excel formül enjeksiyonu ayrıntısı:** bir madde metni (kullanıcının
+yüklediği belgeden gelir) doğal biçimde `-` ile başlayan bir liste öğesi
+olabilir (örn. `"- İlgili birimler bildirmekle yükümlüdür."`). Bu metin
+`export_to_csv`/`export_to_excel` ile dışa aktarılıp Excel/LibreOffice'te
+açıldığında, hücre başındaki `=`, `+`, `-`, `@` karakterleri bir FORMÜL
+başlangıcı sayılabilir — bu, kötü niyetli (ya da sadece tesadüfi) bir
+belge metninin bir hesap tablosu formülüne DÖNÜŞMESİ anlamına gelir.
+`_neutralize_formula_prefix`, bu dört karakterle başlayan hücrelerin
+başına bir tek tırnak (`'`) ekleyerek düz metin yorumunu ZORLAR (bkz.
+`tests/test_reporting.py::TestMetricsFormulaEnjeksiyonuKorumasi`).
+
+**Değerlendirilip ölçek olarak DÜŞÜK bulunan, izlenen konular:**
+- `data/cache/embeddings/` (bkz. `embedder.py`) yüklenen belge metninden
+  türetilen embedding vektörlerini SÜRESİZ diskte tutar (sha256 anahtarlı).
+  Vektörler orijinal metne kolayca geri çevrilemez, ama gizli belgelerle
+  çalışan bir DAĞITIMDA bu dizin periyodik olarak temizlenmeli.
+- `requirements.txt` alt sınır (`>=`) kullanıyor, ÜST sınır/tam sürüm
+  YOK — tekrarlanabilirlik açısından (güvenlik açığı değil) gelecekte
+  `pip install` farklı bir sürüm çekebilir; üretime alınacaksa `pip
+  freeze` ile kilitlenmesi düşünülebilir.
+
+## 7. Bilinen sınırlamalar
 
 Bu bölüm BİLEREK burada — "her şey mükemmel çalışıyor" izlenimi vermek
 yerine, HANGİ senaryoların GERÇEK veriyle DOĞRULANMADIĞINI açıkça

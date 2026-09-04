@@ -223,7 +223,7 @@ desteklenmeyen uzantı) üzerinden uçtan uca test edilir; kritik akışlar
 ayrıca gerçek bir Chrome tarayıcısında görsel olarak da doğrulanmıştır.
 
 **Bu metodolojinin açıkça KABUL ETTİĞİ boşluklar** (bkz.
-ARCHITECTURE.md §6): MOVED sınıflandırması ve L2'nin pozitif (gerçekten
+ARCHITECTURE.md §7): MOVED sınıflandırması ve L2'nin pozitif (gerçekten
 gerekli) bir eşleşme örneği, mevcut test korpusunda TEMSİL EDİLMİYOR. Bu,
 aracın bu iki senaryoda YANLIŞ çalıştığı anlamına gelmez — sadece bu iki
 senaryonun HENÜZ gerçek veriyle doğrulanmadığı anlamına gelir.

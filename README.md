@@ -88,14 +88,26 @@ madde/bölüm bazında renkli yan yana karşılaştırma otomatik oluşur.
       kullanım telemetrisi kapatıldı. `docs/ARCHITECTURE.md` (4 mimari
       ilke + 3 katmanlı eşleştirme/sınıflandırma süzgeci) ve
       `docs/METHODOLOGY.md` (algoritma adım adım + gerçek kalibrasyon
-      bulguları) yazıldı. 6 yeni test, **toplam 199 test geçiyor**.
+      bulguları) yazıldı. 6 yeni test, toplam 199 test geçiyor.
+- [x] **Güvenlik taraması** (proje tamamlandıktan SONRA, ayrı bir geçiş):
+      kod deseni araması + `pip-audit` bağımlılık taraması + hedefli
+      sızma denemeleri. Bir gerçek bulgu: CSV/Excel **formül enjeksiyonu**
+      (CWE-1236) — bir madde metni `-` ile başlayan bir liste öğesi
+      olduğunda bile dışa aktarılan dosyada Excel/LibreOffice tarafından
+      formül sanılabiliyordu; `src/reporting/metrics.py::
+      _neutralize_formula_prefix` ile düzeltildi. Diğer vektörler (path
+      traversal, HTML/XSS, kod enjeksiyonu, sabit kodlanmış sır, bilinen
+      CVE'li bağımlılık) kontrol edildi, sorun BULUNMADI (bkz.
+      `docs/ARCHITECTURE.md` §6 — tam tablo). 9 yeni test, **toplam 208
+      test geçiyor**.
 
 ## Proje Durumu: TAMAMLANDI
 
-Adım 0-8'in tamamı bitti. Mimari ilkeler, algoritma detayları ve gerçek
-kalibrasyon bulguları için `docs/` altındaki iki belgeye bakın. Bilinen
-sınırlamalar (gerçek MOVED/L2-pozitif örneği eksikliği) için bkz.
-`docs/ARCHITECTURE.md` §6.
+Adım 0-8'in tamamı bitti, ardından bir güvenlik taraması yapıldı. Mimari
+ilkeler, algoritma detayları, güvenlik bulguları ve gerçek kalibrasyon
+bulguları için `docs/` altındaki iki belgeye bakın. Bilinen sınırlamalar
+(gerçek MOVED/L2-pozitif örneği eksikliği) için bkz. `docs/ARCHITECTURE.md`
+§7.
 
 ### Genel notlar (proje boyunca biriken, hâlâ geçerli)
 
@@ -122,7 +134,7 @@ sınırlamalar (gerçek MOVED/L2-pozitif örneği eksikliği) için bkz.
   çözmesi gereken pozitif bir embedding örneği YOK. Gerçek belgelerle
   kullanılmaya başlanmadan önce `document_spec.py`'ye bu iki senaryo
   eklenip ilgili eşikler/mantık yeniden gözden geçirilmeli (bkz.
-  `docs/ARCHITECTURE.md` §6).
+  `docs/ARCHITECTURE.md` §7).
 - Uygulamayı çalıştırmak için: `streamlit run app.py` (bkz. "Uygulamayı
   Çalıştırma" bölümü). `ground_truth.json` (`data/samples/`) hâlâ TEK
   doğruluk kaynağı; her yeni katmanı gözle değil buna karşı objektif
