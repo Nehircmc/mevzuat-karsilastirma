@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import docx
+from docx.opc.exceptions import PackageNotFoundError
 
 from src.config import MIN_TOTAL_CHARS_FOR_DOCX_TEXT_LAYER
-from src.ingestion.base import DocumentLoader, NoTextLayerError
+from src.ingestion.base import CorruptDocumentError, DocumentLoader, NoTextLayerError
 from src.models import Document, DocumentMeta, TextUnit
 
 
@@ -16,7 +17,17 @@ class DOCXLoader(DocumentLoader):
 
     def load(self, path: str | Path, doc_id: str) -> Document:
         path = Path(path)
-        doc = docx.Document(str(path))
+        try:
+            doc = docx.Document(str(path))
+        except PackageNotFoundError as exc:
+            # NEDEN: python-docx'in KENDİ istisnası, uzantısı .docx olan ama
+            # içeriği bozuk/boş/geçersiz (geçerli bir ZIP paketi olmayan) bir
+            # dosyada fırlatılır -- bkz. pdf_loader.py'deki AYNI gerekçe
+            # (CorruptDocumentError, çağıranın kütüphaneye özgü istisna
+            # bilmesini gerektirmez).
+            raise CorruptDocumentError(
+                f"'{path}' bir DOCX olarak açılamadı; dosya bozuk, boş ya da geçersiz olabilir."
+            ) from exc
 
         # NEDEN `doc.paragraphs`: python-docx bu koleksiyonu SADECE gövde
         # (body) paragraflarından oluşturur; üstbilgi/altbilgi paragrafları

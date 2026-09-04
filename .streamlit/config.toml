@@ -1,0 +1,15 @@
+# Adım 8: temel performans/gizlilik ayarları.
+#
+# NEDEN maxUploadSize düşürüldü (varsayılan 200): mevzuat/politika belgeleri
+# neredeyse her zaman birkaç MB'ın altındadır (bu projenin örnek belgeleri
+# ~90KB); 50MB, gerçekçi büyük belgeler için bolca pay bırakırken kazara
+# (veya kötü niyetli) çok büyük bir dosyanın PyMuPDF/python-docx'i uzun
+# süre meşgul etmesini / sunucu belleğini gereksiz yere tüketmesini önler.
+[server]
+maxUploadSize = 50
+
+# NEDEN kapalı: belge içerikleri (yüklenen dosyaların İÇERİĞİ DEĞİL ama
+# kullanım telemetrisi) üçüncü bir tarafa gönderilmemeli -- mevzuat
+# karşılaştırma potansiyel olarak hassas/gizli belgelerle kullanılabilir.
+[browser]
+gatherUsageStats = false

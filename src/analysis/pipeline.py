@@ -22,6 +22,7 @@ from src.analysis.classifier import ClassifiedSection, classify_match
 from src.analysis.differ import SectionDiff, diff_section_match
 from src.analysis.embedder import Embedder
 from src.analysis.section_matcher import match_sections
+from src.ingestion.base import CorruptDocumentError, NoTextLayerError
 from src.ingestion.factory import get_loader
 from src.models import ChangeType, Document, DocumentMeta
 from src.parsing.structure_parser import parse_structure
@@ -67,6 +68,16 @@ def _load_document(file_bytes: bytes, filename: str, doc_id: str) -> Document:
     try:
         loader = get_loader(tmp_path)
         return loader.load(tmp_path, doc_id=doc_id)
+    except (NoTextLayerError, CorruptDocumentError) as exc:
+        # NEDEN mesaj YENİDEN yazılıyor: loader'lar hata mesajlarında
+        # kendilerine verilen `path`i (burada GEÇİCİ dosya yolu, örn.
+        # /tmp/tmpXXXX.pdf) kullanır -- kullanıcıya bunun yerine YÜKLEDİĞİ
+        # dosyanın kendi adı gösterilmeli (hem daha anlaşılır hem sunucunun
+        # iç dosya sistemi düzenini SIZDIRMAZ). str.replace() güvenlidir:
+        # loader'lar `path`i HER ZAMAN str(tmp_path) ile birebir aynı
+        # biçimde interpolate eder (bkz. pdf_loader.py/docx_loader.py).
+        message = str(exc).replace(str(tmp_path), filename)
+        raise type(exc)(message) from exc
     finally:
         tmp_path.unlink(missing_ok=True)
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.ingestion.base import NoTextLayerError
+from src.ingestion.base import CorruptDocumentError, NoTextLayerError
 from src.ui import components, styles
 
 st.set_page_config(page_title="Mevzuat Karşılaştırma", layout="wide")
@@ -55,9 +55,28 @@ else:
         except NoTextLayerError as exc:
             st.error(f"Belge okunamadı: {exc}")
             st.stop()
+        except CorruptDocumentError as exc:
+            st.error(f"Belge bozuk veya geçersiz: {exc}")
+            st.stop()
         except ValueError as exc:
             st.error(f"Belge işlenemedi: {exc}")
             st.stop()
+        except Exception as exc:
+            # NEDEN son bir genel yakalama: kullanıcıya ASLA çıplak bir
+            # Python traceback'i gösterilmemeli (hem korkutucu hem de
+            # sunucunun iç dosya yollarını/kütüphane sürümlerini sızdırır)
+            # -- öngörülemeyen (yukarıdaki üç türün dışında kalan) her hata
+            # burada tutarlı, anlaşılır bir mesaja dönüştürülür.
+            st.error(f"Beklenmeyen bir hata oluştu, belgeler karşılaştırılamadı: {exc}")
+            st.stop()
+
+    if not result.rows:
+        st.warning(
+            "Belgelerde tanınabilir bir MADDE/GEÇİCİ MADDE yapısı bulunamadı. "
+            "Belgenin standart madde numaralandırması ('MADDE 1', 'MADDE 2' vb.) "
+            "içerdiğinden emin olun."
+        )
+        st.stop()
 
     components.render_metric_cards(result)
     components.render_executive_summary(result)

@@ -13,7 +13,7 @@ import pytest
 from data.samples.document_spec import KURUM_ADI
 from data.samples.generate_samples import _turkish_upper
 from src.config import PAGE_NUMBER_FOOTER_PATTERN, SAMPLES_DIR
-from src.ingestion.base import NoTextLayerError
+from src.ingestion.base import CorruptDocumentError, NoTextLayerError
 from src.ingestion.docx_loader import DOCXLoader
 from src.ingestion.factory import get_loader
 from src.ingestion.pdf_loader import PDFLoader
@@ -90,6 +90,28 @@ class TestPDFLoader:
         with pytest.raises(NoTextLayerError):
             PDFLoader().load(taranmis_pdf, doc_id="taranmis")
 
+    def test_bozuk_pdf_corrupt_document_error_verir(self, tmp_path):
+        # NEDEN (Adım 8): uzantısı .pdf ama İÇERİĞİ geçersiz bir dosya --
+        # PyMuPDF'in kendi FileDataError'ı burada CorruptDocumentError'a
+        # çevrilmeli (bkz. ingestion/base.py NEDEN notu), çağıran (UI)
+        # PyMuPDF'e özgü bir istisna türü bilmek ZORUNDA kalmamalı.
+        bozuk_pdf = tmp_path / "bozuk.pdf"
+        bozuk_pdf.write_bytes(b"bu gecerli bir PDF degil, sadece rastgele baytlar")
+
+        with pytest.raises(CorruptDocumentError):
+            PDFLoader().load(bozuk_pdf, doc_id="bozuk")
+
+    def test_bos_dosya_pdf_olarak_da_corrupt_document_error_verir(self, tmp_path):
+        # NEDEN ayrı test: pymupdf.EmptyFileError, FileDataError'ın ALT
+        # SINIFIDIR ama sıfır baytlık dosyalar farklı bir kod yolundan
+        # (dosya sistemi okuma) geçebilir -- ikisinin de aynı
+        # CorruptDocumentError'a çevrildiğini ayrı ayrı doğruluyoruz.
+        bos_pdf = tmp_path / "bos.pdf"
+        bos_pdf.write_bytes(b"")
+
+        with pytest.raises(CorruptDocumentError):
+            PDFLoader().load(bos_pdf, doc_id="bos")
+
 
 class TestDOCXLoader:
     def test_provenance_alanlari_dolu(self):
@@ -128,6 +150,17 @@ class TestDOCXLoader:
 
         with pytest.raises(NoTextLayerError):
             DOCXLoader().load(bos_docx, doc_id="bos")
+
+    def test_bozuk_docx_corrupt_document_error_verir(self, tmp_path):
+        # NEDEN (Adım 8): DOCX aslen bir ZIP arşividir -- ZIP OLMAYAN bir
+        # dosyada python-docx'in PackageNotFoundError'ı fırlatılır, bu da
+        # CorruptDocumentError'a çevrilmeli (bkz. TestPDFLoader'daki AYNI
+        # gerekçe).
+        bozuk_docx = tmp_path / "bozuk.docx"
+        bozuk_docx.write_bytes(b"bu gecerli bir ZIP/DOCX degil")
+
+        with pytest.raises(CorruptDocumentError):
+            DOCXLoader().load(bozuk_docx, doc_id="bozuk")
 
 
 class TestFactory:

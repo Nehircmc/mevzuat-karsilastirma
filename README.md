@@ -4,9 +4,9 @@
 ortak, farklı, değişen ve yeni eklenen bölümleri kaynak göstererek sunan
 belge analiz aracı.
 
-Mimari kararlar ve yol haritası için proje geliştirme geçmişine bakınız.
-Detaylı mimari doküman `docs/ARCHITECTURE.md` içinde (ilerleyen adımlarda
-yazılacaktır).
+Mimari kararlar ve gerekçeleri için [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
+eşleştirme/diff/sınıflandırma algoritmasının adım adım nasıl çalıştığı ve
+gerçek kalibrasyon bulguları için [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 
 ## Kurulum
 
@@ -76,9 +76,28 @@ madde/bölüm bazında renkli yan yana karşılaştırma otomatik oluşur.
       bağımlı olması gibi ters bir katman ilişkisi önlendi). 35 yeni test
       (`tests/test_reporting.py`) + entegrasyon testleri, toplam 193 test
       geçiyor; tarayıcıda görsel olarak da doğrulandı.
-- [ ] **Adım 8 (SIRADA): Performans, hata yönetimi, testler**
+- [x] Adım 8: Hata yönetimi + dokümantasyon + son testler — **proje TAMAMLANDI**.
+      `src/ingestion/base.py::CorruptDocumentError` eklendi (bozuk PDF/DOCX,
+      `pymupdf.FileDataError`/`docx.opc.exceptions.PackageNotFoundError`'ı
+      sarar); `_load_document` artık hata mesajlarındaki geçici dosya
+      yolunu kullanıcının yüklediği GERÇEK dosya adıyla değiştiriyor;
+      `app.py`'ye `CorruptDocumentError` + genel `except Exception` +
+      "hiç madde bulunamadı" uyarısı eklendi (artık hiçbir durumda çıplak
+      traceback gösterilmiyor) — gerçek tarayıcıda doğrulandı.
+      `.streamlit/config.toml` ile yükleme boyutu 50MB'a sınırlandı,
+      kullanım telemetrisi kapatıldı. `docs/ARCHITECTURE.md` (4 mimari
+      ilke + 3 katmanlı eşleştirme/sınıflandırma süzgeci) ve
+      `docs/METHODOLOGY.md` (algoritma adım adım + gerçek kalibrasyon
+      bulguları) yazıldı. 6 yeni test, **toplam 199 test geçiyor**.
 
-### Adım 8'e başlarken dikkat edilecekler (Adım 7'den notlar)
+## Proje Durumu: TAMAMLANDI
+
+Adım 0-8'in tamamı bitti. Mimari ilkeler, algoritma detayları ve gerçek
+kalibrasyon bulguları için `docs/` altındaki iki belgeye bakın. Bilinen
+sınırlamalar (gerçek MOVED/L2-pozitif örneği eksikliği) için bkz.
+`docs/ARCHITECTURE.md` §6.
+
+### Genel notlar (proje boyunca biriken, hâlâ geçerli)
 
 - `src/analysis/pipeline.py::compare_documents(...) -> ComparisonResult`
   TAM boru hattının TEK giriş noktasıdır — hem `src/ui/components.py` hem
@@ -98,11 +117,12 @@ madde/bölüm bazında renkli yan yana karşılaştırma otomatik oluşur.
   bağımsız dosya) çakışmadan enjekte edilebiliyor.
 - Excel için `openpyxl`, CSV için `utf-8-sig` (BOM'lu, Excel'in Türkçe
   karakterleri bozmadan açması için) kullanılıyor.
-- **ÖNEMLİ SINIRLAMA (Adım 4/5'ten devam eden, hâlâ çözülmedi):**
+- **ÖNEMLİ SINIRLAMA (Adım 4/5'ten devam eden, proje boyunca hiç çözülmedi):**
   `ground_truth.json`'da gerçek bir MOVED örneği VE L2'nin gerçekten
-  çözmesi gereken pozitif bir embedding örneği YOK. Adım 8'de veya
-  gerçek belgelerle kullanılmaya başlanmadan önce `document_spec.py`'ye
-  bu iki senaryo eklenip ilgili eşikler/mantık yeniden gözden geçirilmeli.
+  çözmesi gereken pozitif bir embedding örneği YOK. Gerçek belgelerle
+  kullanılmaya başlanmadan önce `document_spec.py`'ye bu iki senaryo
+  eklenip ilgili eşikler/mantık yeniden gözden geçirilmeli (bkz.
+  `docs/ARCHITECTURE.md` §6).
 - Uygulamayı çalıştırmak için: `streamlit run app.py` (bkz. "Uygulamayı
   Çalıştırma" bölümü). `ground_truth.json` (`data/samples/`) hâlâ TEK
   doğruluk kaynağı; her yeni katmanı gözle değil buna karşı objektif

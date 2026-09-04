@@ -18,6 +18,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.config import ASSETS_DIR, BASE_DIR, COLOR_PALETTE, SAMPLES_DIR
+from src.ingestion.base import CorruptDocumentError
 from src.models import ChangeType
 from src.ui import styles
 from src.ui.components import ComparisonResult, compare_documents
@@ -132,6 +133,21 @@ class TestCompareDocumentsGercekOrnekBelgelerle:
         with pytest.raises(ValueError):
             compare_documents(b"veri", "belge.txt", b"veri", "belge2.txt")
 
+    def test_bozuk_pdf_corrupt_document_error_verir_ve_dosya_adini_gosterir(self):
+        # NEDEN (Adım 8): _load_document, loader'ın GEÇİCİ dosya yolunu
+        # (örn. /tmp/tmpXXXX.pdf) kullanıcının YÜKLEDİĞİ gerçek dosya adıyla
+        # değiştirmeli -- hem daha anlaşılır hem sunucunun iç dosya
+        # sistemini SIZDIRMAZ.
+        with pytest.raises(CorruptDocumentError) as exc_info:
+            compare_documents(
+                b"bu gecerli bir PDF degil", "benim-yonetmeligim.pdf",
+                b"onemli degil", "de-yuklenmeyecek.pdf",
+            )
+        assert str(exc_info.value) == (
+            "'benim-yonetmeligim.pdf' bir PDF olarak açılamadı; "
+            "dosya bozuk, boş ya da geçersiz olabilir."
+        )
+
 
 class TestAppUctanUcaDumanTesti:
     """streamlit.testing.v1.AppTest ile app.py'nin GERÇEK bir çalıştırmasını simüle eder."""
@@ -209,3 +225,48 @@ class TestAppUctanUcaDumanTesti:
 
         assert at.exception
         assert "Invalid file extension" in at.exception[0].value
+
+    def test_bozuk_pdf_yuklenince_traceback_degil_temiz_hata_gosterir(self):
+        # NEDEN (Adım 8, kritik): doğru uzantılı ama İÇERİĞİ bozuk bir dosya
+        # -- düzeltilmeden önce bu, kullanıcıya çıplak bir Python traceback'i
+        # (ve sunucunun geçici dosya yolunu) sızdırırdı. app.py artık
+        # CorruptDocumentError'ı yakalayıp temiz bir st.error göstermeli.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        at.file_uploader(key="mk_old_uploader").upload(
+            "bozuk.pdf", b"bu gecerli bir PDF degil, bozuk baytlar", "application/pdf"
+        )
+        at.file_uploader(key="mk_new_uploader").upload(
+            "bozuk2.pdf", b"bu da bozuk", "application/pdf"
+        )
+        at.run(timeout=30)
+
+        assert not at.exception
+        errors = [e.value for e in at.get("error")]
+        assert any("bozuk.pdf" in e for e in errors)
+        assert not any("/tmp" in e or "/var" in e for e in errors)
+
+    def test_madde_yapisi_olmayan_belgede_uyari_gosterir(self):
+        # NEDEN: metin katmanı VAR (NoTextLayerError tetiklenmez) ama hiçbir
+        # "MADDE N" kalıbı YOK -- kullanıcı sessizce boş bir sonuç görüp
+        # "karşılaştırma başarılı, hiç fark yok" yanılgısına düşmemeli.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        import pymupdf
+
+        pdf = pymupdf.open()
+        page = pdf.new_page()
+        page.insert_text((72, 72), "Bu belge hicbir madde numaralandirmasi icermeyen duz bir metindir. " * 5)
+        content = pdf.tobytes()
+        pdf.close()
+
+        at.file_uploader(key="mk_old_uploader").upload("maddesiz1.pdf", content, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("maddesiz2.pdf", content, "application/pdf")
+        at.run(timeout=30)
+
+        assert not at.exception
+        warnings = [w.value for w in at.get("warning")]
+        assert any("MADDE" in w for w in warnings)
+        assert not at.get("metric")  # metrik kartları hiç render edilmemeli

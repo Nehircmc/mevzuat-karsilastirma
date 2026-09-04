@@ -19,6 +19,21 @@ class NoTextLayerError(Exception):
     """
 
 
+class CorruptDocumentError(Exception):
+    """
+    Dosya uzantısı doğru (.pdf/.docx) ama İÇERİK bozuk/okunamaz olduğunda
+    fırlatılır (örn. PyMuPDF'in FileDataError'ı, python-docx'in
+    PackageNotFoundError'ı).
+
+    NEDEN format-özel kütüphane istisnaları (pymupdf.FileDataError,
+    docx.opc.exceptions.PackageNotFoundError) burada SARILIYOR: app.py
+    (Mimari İlke D) format/kütüphane bilgisi TAŞIMAMALI -- SADECE
+    src/ingestion/base.py'nin tanımladığı kapalı istisna kümesini (bu ve
+    NoTextLayerError) yakalayabilmeli. Loader'lar DEĞİŞTİĞİNDE (örn.
+    PyMuPDF yerine başka bir kütüphane) UI kodunun DEĞİŞMESİ GEREKMEMELİ.
+    """
+
+
 class DocumentLoader(ABC):
     """
     Format-özel loader'ların uyması gereken sözleşme.

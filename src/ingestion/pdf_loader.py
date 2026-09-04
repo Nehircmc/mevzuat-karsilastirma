@@ -21,7 +21,7 @@ from src.config import (
     MIN_PAGE_RATIO_WITH_TEXT_LAYER,
     PAGE_NUMBER_FOOTER_PATTERN,
 )
-from src.ingestion.base import DocumentLoader, NoTextLayerError
+from src.ingestion.base import CorruptDocumentError, DocumentLoader, NoTextLayerError
 from src.models import Document, DocumentMeta, TextUnit
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -45,7 +45,18 @@ class PDFLoader(DocumentLoader):
 
     def load(self, path: str | Path, doc_id: str) -> Document:
         path = Path(path)
-        pdf = pymupdf.open(path)
+        try:
+            pdf = pymupdf.open(path)
+        except pymupdf.FileDataError as exc:
+            # NEDEN pymupdf.FileDataError yakalanıyor: PyMuPDF'in KENDİ
+            # istisnası, uzantısı .pdf olan ama içeriği bozuk/boş/geçersiz
+            # bir dosyada fırlatılır (EmptyFileError bunun bir alt sınıfıdır,
+            # ayrıca yakalamaya gerek yok). Bu, çağıranın (UI) PyMuPDF'e özgü
+            # bir istisna türü BİLMESİNİ gerektirmemesi için CorruptDocumentError'a
+            # (bkz. ingestion/base.py NEDEN notu) çevrilir.
+            raise CorruptDocumentError(
+                f"'{path}' bir PDF olarak açılamadı; dosya bozuk, boş ya da geçersiz olabilir."
+            ) from exc
         try:
             self._assert_text_layer_present(pdf, path)
 
