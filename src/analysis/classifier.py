@@ -1,15 +1,34 @@
 """
-Adım 5: ChangeType sınıflandırma -- kapalı sözlük (Mimari İlke C).
+Adım 5 (Adım 9'da yeniden tasarlandı): sınıflandırma -- kapalı sözlük
+(Mimari İlke C), İKİ BAĞIMSIZ boyut olarak.
 
 Bir MatchResult'taki (bkz. section_matcher.py) HER Section'a (eşleşmiş veya
-açıkta kalmış) tam olarak BİR ChangeType atar. Karar ağacı SADECE üç sinyale
-dayanır: madde_no eşitliği, karakter benzerliği (difflib.SequenceMatcher,
-normalize edilmiş metin üzerinde) ve konum/hiyerarşi kayması (order_index +
-heading_path). NEDEN embedding/kosinüs benzerliği KULLANILMIYOR: L1
-eşleşmelerinin çoğunda (bkz. Adım 3/4) hiç embedding hesaplanmamış olabilir
-(embedder isteğe bağlıdır) -- sınıflandırma bu OPSİYONEL veriye bağımlı
-olursa, embedder verilmeyen çağrılarda sessizce eksik/yanlış çalışırdı.
-Karakter benzerliği ucuz, deterministik ve HER ZAMAN mevcuttur.
+açıkta kalmış) İKİ AYRI şey atanır:
+
+1. İÇERİK DURUMU (change_type, ChangeType -- IDENTICAL/MODIFIED/ADDED/
+   REMOVED): "bu maddenin METNİ değişti mi?" sorusunun kapalı sözlükle
+   cevabı. SADECE karakter benzerliğine (difflib) dayanır, madde_no'dan
+   BAĞIMSIZDIR.
+2. YAPISAL BAYRAKLAR (numarasi_degisti, yeri_degisti -- bool): "bu
+   maddenin NUMARASI/KONUMU değişti mi?" sorularının cevabı. İÇERİK
+   durumundan BAĞIMSIZDIR -- İKİSİ DE aynı anda True olabilir.
+
+NEDEN bu ikisi AYRI (eskiden MOVED/RENUMBERED de birer ChangeType üyesiydi):
+bir madde HEM numarası HEM içeriği değişmiş olabilir (bkz.
+ground_truth.json/birim_sorumlulukları: 2019 MADDE 9 -> 2023 MADDE 8, HEM
+numara HEM metin değişti). Eski modelde bu durumda YAPISAL olgu (numara
+değişti) SESSİZCE KAYBOLUYORDU -- satır sadece MODIFIED sayılıyor, "numarası
+da değişti" bilgisi hiçbir yerde görünmüyordu. Şimdi her satır İKİSİNİ de
+taşıyor: change_type=MODIFIED VE numarasi_degisti=True aynı anda mümkün.
+Toplama/sayım tarafında da bu ayrım korunmalı -- "kaç madde İÇERİK olarak
+değişti" ile "kaç maddenin NUMARASI değişti" birbirinden bağımsız, farklı
+sayılardır ve TOPLANMAZ (bkz. src/analysis/pipeline.py::ComparisonResult).
+
+NEDEN embedding/kosinüs benzerliği KULLANILMIYOR: L1 eşleşmelerinin
+çoğunda (bkz. Adım 3/4) hiç embedding hesaplanmamış olabilir (embedder
+isteğe bağlıdır) -- sınıflandırma bu OPSİYONEL veriye bağımlı olursa,
+embedder verilmeyen çağrılarda sessizce eksik/yanlış çalışırdı. Karakter
+benzerliği ucuz, deterministik ve HER ZAMAN mevcuttur.
 """
 
 from __future__ import annotations
@@ -18,11 +37,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from src.analysis.section_matcher import MatchResult, SectionMatch
-from src.config import (
-    IDENTICAL_CHAR_SIMILARITY_THRESHOLD,
-    MOVED_MIN_POSITION_DELTA,
-    RENUMBERED_CHAR_SIMILARITY_THRESHOLD,
-)
+from src.config import IDENTICAL_CHAR_SIMILARITY_THRESHOLD, MOVED_MIN_POSITION_DELTA
 from src.models import ChangeType, Section
 from src.parsing.normalizer import normalize
 
@@ -32,49 +47,43 @@ def char_similarity(old_text: str, new_text: str) -> float:
     return SequenceMatcher(None, normalize(old_text).normalized, normalize(new_text).normalized).ratio()
 
 
-def _moved(old: Section, new: Section) -> bool:
+def classify_content(match: SectionMatch) -> ChangeType:
     """
-    "Taşınmış" sinyali: madde_no AYNI kalsa bile içinde bulunduğu
-    KISIM/BÖLÜM bağlamı DEĞİŞTİYSE ya da belgedeki sırası önemli ölçüde
-    kaydıysa (bkz. config.py MOVED_MIN_POSITION_DELTA NEDEN notu).
+    Eşleşmiş bir (old, new) çiftin İÇERİK DURUMU -- SADECE metin
+    benzerliğine dayanır, madde_no'dan TAMAMEN BAĞIMSIZDIR (numara
+    değişikliği YAPISAL bir olgudur, bkz. is_renumbered).
+
+    NEDEN madde_no'ya HİÇ bakılmıyor (eski karar ağacında bakılıyordu):
+    "bu maddenin metni değişti mi" sorusunun cevabı, numarasının kayıp
+    kaymadığından TAMAMEN bağımsız olmalı -- iki soru birbirine
+    karıştırılırsa (eski modelde olduğu gibi) "numarası kaymış AMA metni
+    de değişmiş" durumu ya yanlış RENUMBERED'a ya da numara bilgisini
+    kaybederek sade MODIFIED'a düşerdi.
+    """
+    similarity = char_similarity(match.old.joined_text, match.new.joined_text)
+    return ChangeType.IDENTICAL if similarity >= IDENTICAL_CHAR_SIMILARITY_THRESHOLD else ChangeType.MODIFIED
+
+
+def is_renumbered(match: SectionMatch) -> bool:
+    """YAPISAL bayrak: madde_no değişti mi -- içerik durumundan BAĞIMSIZ."""
+    return match.old.madde_no != match.new.madde_no
+
+
+def is_moved(match: SectionMatch) -> bool:
+    """
+    YAPISAL bayrak: KISIM/BÖLÜM bağlamı DEĞİŞTİYSE ya da belgedeki sırası
+    önemli ölçüde kaydıysa (bkz. config.py MOVED_MIN_POSITION_DELTA NEDEN
+    notu) -- içerik durumundan VE numara değişip değişmediğinden BAĞIMSIZ.
 
     NEDEN heading_path[:-1] (SON eleman -- "MADDE N"/"GEÇİCİ MADDE N"
     etiketi -- HARİÇ): heading_path'in son elemanı zaten madde_no'nun
     kendisidir (aynı bilgiyi iki kez karşılaştırmamak için atılır); KISIM/
     BÖLÜM zinciri budur.
     """
+    old, new = match.old, match.new
     if old.heading_path[:-1] != new.heading_path[:-1]:
         return True
     return abs(new.order_index - old.order_index) >= MOVED_MIN_POSITION_DELTA
-
-
-def classify_match(match: SectionMatch) -> ChangeType:
-    """
-    Eşleşmiş bir (old, new) Section çiftine ChangeType atar.
-
-    Karar ağacı:
-    1) madde_no AYNI:
-       a) karakter benzerliği >= IDENTICAL_CHAR_SIMILARITY_THRESHOLD (0.98):
-          konum/bağlam da kaymışsa MOVED, değilse IDENTICAL.
-       b) aksi halde MODIFIED.
-    2) madde_no FARKLI (numara kaymış):
-       a) karakter benzerliği >= RENUMBERED_CHAR_SIMILARITY_THRESHOLD (0.995,
-          IDENTICAL eşiğinden bile DAHA SIKI -- bkz. config.py NEDEN notu):
-          RENUMBERED.
-       b) aksi halde MODIFIED (hem numara HEM içerik değişmiş -- bkz.
-          ground_truth.json/birim_sorumlulukları: "RENUMBERED değil MODIFIED
-          olarak sınıflandırılmalı çünkü metin de değişti").
-    """
-    similarity = char_similarity(match.old.joined_text, match.new.joined_text)
-
-    if match.old.madde_no == match.new.madde_no:
-        if similarity >= IDENTICAL_CHAR_SIMILARITY_THRESHOLD:
-            return ChangeType.MOVED if _moved(match.old, match.new) else ChangeType.IDENTICAL
-        return ChangeType.MODIFIED
-
-    if similarity >= RENUMBERED_CHAR_SIMILARITY_THRESHOLD:
-        return ChangeType.RENUMBERED
-    return ChangeType.MODIFIED
 
 
 @dataclass(frozen=True)
@@ -83,11 +92,18 @@ class ClassifiedSection:
     Bir Section'ın nihai sınıflandırma sonucu -- eşleşmiş bir çift için
     old/new İKİSİ de dolu, REMOVED için sadece old, ADDED için sadece new
     doludur (üçü de aynı anda None OLAMAZ, en az biri her zaman dolu).
+
+    change_type İÇERİK durumu, numarasi_degisti/yeri_degisti YAPISAL
+    bayraklardır -- BAĞIMSIZ boyutlar, aynı satırda İKİSİ de (örn.
+    change_type=MODIFIED + numarasi_degisti=True) görünebilir. REMOVED/
+    ADDED satırlarında (karşılığı olmadığı için) ikisi de HER ZAMAN False'tur.
     """
 
     change_type: ChangeType
     old: Section | None
     new: Section | None
+    numarasi_degisti: bool = False
+    yeri_degisti: bool = False
 
     def __post_init__(self) -> None:
         if self.old is None and self.new is None:
@@ -102,7 +118,13 @@ def classify_all(result: MatchResult) -> list[ClassifiedSection]:
     kapsam/tamlık testleri.
     """
     classified = [
-        ClassifiedSection(change_type=classify_match(m), old=m.old, new=m.new)
+        ClassifiedSection(
+            change_type=classify_content(m),
+            old=m.old,
+            new=m.new,
+            numarasi_degisti=is_renumbered(m),
+            yeri_degisti=is_moved(m),
+        )
         for m in result.matches
     ]
     classified.extend(

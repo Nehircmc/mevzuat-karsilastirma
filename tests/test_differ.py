@@ -15,7 +15,14 @@ import json
 
 import pytest
 
-from src.analysis.classifier import ClassifiedSection, char_similarity, classify_all, classify_match
+from src.analysis.classifier import (
+    ClassifiedSection,
+    char_similarity,
+    classify_all,
+    classify_content,
+    is_moved,
+    is_renumbered,
+)
 from src.analysis.differ import diff_section_match, diff_words, section_sentences
 from src.analysis.section_matcher import SectionMatch, match_sections
 from src.config import SAMPLES_DIR
@@ -74,12 +81,20 @@ def _section(
 class TestClassifyAllGroundTruthIleTamamenEsler:
     """
     En üst düzey regresyon: parse_structure -> match_sections -> classify_all
-    ZİNCİRİNİN ürettiği ChangeType'lar, ground_truth.json'daki HER maddeyle
-    (madde_no bazında) BİREBİR eşleşmeli.
+    ZİNCİRİNİN ürettiği İÇERİK durumu + YAPISAL bayraklar, ground_truth.json'daki
+    HER maddeyle (madde_no bazında) BİREBİR eşleşmeli.
+
+    NEDEN ground_truth.json'daki eski (6 değerli) "change_type" alanı BURADA
+    İKİYE AYRIŞTIRILARAK yorumlanır (dosya DEĞİŞTİRİLMEDİ -- bkz. Adım 9 notu):
+    ground_truth'taki "RENUMBERED" etiketi "içerik AYNI, numara FARKLI" anlamına
+    gelir -- yeni modelde bu, content_status=IDENTICAL + numarasi_degisti=True
+    olarak İKİ AYRI sinyale karşılık gelir. "numarası değişti mi" sorusunun
+    cevabı zaten ground_truth'un KENDİ madde_no_2019/madde_no_2023 alanlarından
+    DOĞRUDAN türetilebilir -- ayrı bir alan eklemeye gerek YOK.
     """
 
     @pytest.mark.parametrize("fmt,loader_cls,dosya_2019,dosya_2023", _LOADERS)
-    def test_her_maddenin_change_type_i_ground_truth_ile_ayni(
+    def test_her_maddenin_icerik_durumu_ve_yapisal_bayraklari_ground_truth_ile_ayni(
         self, fmt, loader_cls, dosya_2019, dosya_2023
     ):
         old_sections = _gercek_sections(loader_cls, dosya_2019, f"{fmt}_2019_diff")
@@ -95,19 +110,31 @@ class TestClassifyAllGroundTruthIleTamamenEsler:
         by_new_no = {c.new.madde_no: c for c in classified if c.new is not None and c.old is None}
 
         for m in _GROUND_TRUTH["maddeler"]:
-            expected = ChangeType(m["change_type"])
-            if m["madde_no_2019"] is not None:
-                actual = by_old_no[m["madde_no_2019"]]
-                assert actual.change_type == expected, (
-                    f"{m['id']}: beklenen {expected}, bulunan {actual.change_type} "
-                    f"(2019 no {m['madde_no_2019']})"
+            no_2019, no_2023 = m["madde_no_2019"], m["madde_no_2023"]
+            if no_2019 is not None and no_2023 is not None:
+                actual = by_old_no[no_2019]
+                # "RENUMBERED"/"MOVED" etiketli maddeler İÇERİK olarak AYNIDIR
+                # (bkz. sınıf NEDEN notu) -- sadece "MODIFIED"/"IDENTICAL"
+                # etiketleri doğrudan içerik durumuna karşılık gelir.
+                expected_content = (
+                    ChangeType.IDENTICAL if m["change_type"] in ("IDENTICAL", "RENUMBERED", "MOVED")
+                    else ChangeType(m["change_type"])
                 )
+                assert actual.change_type == expected_content, (
+                    f"{m['id']}: beklenen içerik durumu {expected_content}, "
+                    f"bulunan {actual.change_type} (2019 no {no_2019})"
+                )
+                expected_numarasi_degisti = no_2019 != no_2023
+                assert actual.numarasi_degisti == expected_numarasi_degisti, (
+                    f"{m['id']}: numarasi_degisti beklenen {expected_numarasi_degisti} "
+                    f"(2019:{no_2019} -> 2023:{no_2023}), bulunan {actual.numarasi_degisti}"
+                )
+            elif no_2019 is not None:
+                actual = by_old_no[no_2019]
+                assert actual.change_type == ChangeType.REMOVED, f"{m['id']}: REMOVED bekleniyordu"
             else:
-                actual = by_new_no[m["madde_no_2023"]]
-                assert actual.change_type == expected, (
-                    f"{m['id']}: beklenen {expected}, bulunan {actual.change_type} "
-                    f"(2023 no {m['madde_no_2023']})"
-                )
+                actual = by_new_no[no_2023]
+                assert actual.change_type == ChangeType.ADDED, f"{m['id']}: ADDED bekleniyordu"
 
     @pytest.mark.parametrize("fmt,loader_cls,dosya_2019,dosya_2023", _LOADERS)
     def test_classify_all_hicbir_sectioni_kaybetmez(
@@ -212,8 +239,9 @@ class TestDifferGercekOrnekFikraDuzeyi:
 
     @pytest.mark.parametrize("fmt,loader_cls,dosya_2019,dosya_2023", _LOADERS)
     def test_renumbered_madde_metni_de_identical(self, fmt, loader_cls, dosya_2019, dosya_2023):
-        # NEDEN: RENUMBERED sadece NUMARA değişimini ifade eder, metnin
-        # (sentence-diff düzeyinde) birebir aynı kalması beklenir.
+        # NEDEN: "numarası değişti" bayrağı SADECE numara değişimini ifade
+        # eder, İÇERİK durumu (metnin sentence-diff düzeyinde birebir aynı
+        # kalması) BAĞIMSIZ olarak ayrıca IDENTICAL olmalı.
         old_sections = _gercek_sections(loader_cls, dosya_2019, f"{fmt}_2019_ren")
         new_sections = _gercek_sections(loader_cls, dosya_2023, f"{fmt}_2023_ren")
         result = match_sections(old_sections, new_sections)
@@ -222,7 +250,8 @@ class TestDifferGercekOrnekFikraDuzeyi:
         section_diff = diff_section_match(match)
 
         assert section_diff.is_identical
-        assert classify_match(match) == ChangeType.RENUMBERED
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_renumbered(match) is True
 
 
 class TestDiffWords:
@@ -295,32 +324,54 @@ class TestSentenceBolmeSayfaSinirindaBirlesir:
 
 
 class TestClassifierSentetikKenarDurumlari:
+    """
+    classify_content (İÇERİK durumu) + is_renumbered/is_moved (YAPISAL
+    bayraklar) BAĞIMSIZ boyutlardır -- bkz. classifier.py NEDEN notu. Bu
+    testler her fonksiyonu AYRI AYRI doğrular, AYRICA ikisinin AYNI ANDA
+    True olabildiğini (birim_sorumlulukları senaryosu) özellikle test eder.
+    """
+
     def _match(self, old: Section, new: Section) -> SectionMatch:
         return SectionMatch(old=old, new=new, method="NUMBER_AND_TITLE")
 
     def test_identical_ayni_numara_ayni_metin(self):
         old = _section(units=[_unit("Aynı metin.")], madde_no=1, order_index=0)
         new = _section(units=[_unit("Aynı metin.")], madde_no=1, order_index=0)
-        assert classify_match(self._match(old, new)) == ChangeType.IDENTICAL
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_renumbered(match) is False
+        assert is_moved(match) is False
 
     def test_modified_ayni_numara_farkli_metin(self):
         old = _section(units=[_unit("Eski içerik burada tamamen farklı bir şey anlatıyor.")], madde_no=1, order_index=0)
         new = _section(units=[_unit("Yeni içerik burada bambaşka bir konudan bahsediyor.")], madde_no=1, order_index=0)
-        assert classify_match(self._match(old, new)) == ChangeType.MODIFIED
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.MODIFIED
+        assert is_renumbered(match) is False
 
-    def test_renumbered_farkli_numara_ayni_metin(self):
+    def test_sadece_numarasi_degisen_madde_icerik_olarak_identical_sayilir(self):
+        # NEDEN kritik: eski modelde bu durum ayrı bir "RENUMBERED"
+        # ChangeType'ıydı; yeni modelde İÇERİK durumu IDENTICAL'dır
+        # (metin GERÇEKTEN değişmedi), numarasi_degisti bayrağı bunu AYRICA
+        # işaretler -- ikisi BİRLİKTE "sadece numarası değişti" anlamını verir.
         old = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=12, order_index=11)
         new = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=13, order_index=12)
-        assert classify_match(self._match(old, new)) == ChangeType.RENUMBERED
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_renumbered(match) is True
 
-    def test_modified_farkli_numara_ve_farkli_metin(self):
-        # NEDEN: bkz. ground_truth.json/birim_sorumlulukları -- numara DA
-        # metin DE değişmişse RENUMBERED DEĞİL MODIFIED olmalı.
+    def test_hem_numarasi_hem_icerigi_degisen_madde_ikisi_de_true(self):
+        # NEDEN kritik (bu testin varlığı BİZZAT Adım 9'un konusu): bkz.
+        # ground_truth.json/birim_sorumlulukları -- eski modelde numara
+        # değişimi SESSİZCE KAYBOLUYORDU (satır sadece MODIFIED
+        # sayılıyordu). Yeni modelde HER İKİ sinyal de AYRI AYRI true olmalı.
         old = _section(units=[_unit("Eski içerik burada tamamen farklı bir şey anlatıyor.")], madde_no=9, order_index=8)
         new = _section(units=[_unit("Yeni içerik burada bambaşka bir konudan bahsediyor.")], madde_no=8, order_index=7)
-        assert classify_match(self._match(old, new)) == ChangeType.MODIFIED
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.MODIFIED
+        assert is_renumbered(match) is True
 
-    def test_moved_ayni_numara_ayni_metin_farkli_bolum(self):
+    def test_yeri_degisen_madde_farkli_bolum_icerik_identical_sayilir(self):
         old = _section(
             units=[_unit("Değişmeyen madde metni.")],
             madde_no=1,
@@ -333,20 +384,47 @@ class TestClassifierSentetikKenarDurumlari:
             order_index=0,
             heading_path=("İKİNCİ BÖLÜM", "MADDE 1"),
         )
-        assert classify_match(self._match(old, new)) == ChangeType.MOVED
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_moved(match) is True
+        assert is_renumbered(match) is False
 
-    def test_moved_ayni_numara_ayni_metin_buyuk_pozisyon_kaymasi(self):
+    def test_yeri_degisen_madde_buyuk_pozisyon_kaymasi(self):
         old = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=1, order_index=0)
         new = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=1, order_index=5)
-        assert classify_match(self._match(old, new)) == ChangeType.MOVED
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_moved(match) is True
 
-    def test_identical_kucuk_pozisyon_kaymasi_moved_tetiklemez(self):
+    def test_kucuk_pozisyon_kaymasi_yeri_degisti_tetiklemez(self):
         # NEDEN: MOVED_MIN_POSITION_DELTA=3 -- eşiğin ALTINDAKİ kaymalar
-        # (belge başına bir madde eklenmesi gibi doğal kaymalar) MOVED
-        # sayılmamalı, yoksa RENUMBERED/IDENTICAL kararları anlamsızlaşır.
+        # (belge başına bir madde eklenmesi gibi doğal kaymalar) "yeri
+        # değişti" sayılmamalı, yoksa bu bayrak anlamsızlaşır.
         old = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=1, order_index=0)
         new = _section(units=[_unit("Değişmeyen madde metni.")], madde_no=1, order_index=2)
-        assert classify_match(self._match(old, new)) == ChangeType.IDENTICAL
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_moved(match) is False
+
+    def test_numarasi_hem_yeri_degisen_madde_ikisi_de_true(self):
+        # NEDEN: bu iki bayrak da BİRBİRİNDEN bağımsızdır -- bir madde AYNI
+        # ANDA hem numarası hem bölümü değişmiş olabilir.
+        old = _section(
+            units=[_unit("Değişmeyen madde metni.")],
+            madde_no=5,
+            order_index=4,
+            heading_path=("BİRİNCİ BÖLÜM", "MADDE 5"),
+        )
+        new = _section(
+            units=[_unit("Değişmeyen madde metni.")],
+            madde_no=6,
+            order_index=4,
+            heading_path=("İKİNCİ BÖLÜM", "MADDE 6"),
+        )
+        match = self._match(old, new)
+        assert classify_content(match) == ChangeType.IDENTICAL
+        assert is_renumbered(match) is True
+        assert is_moved(match) is True
 
     def test_removed_ve_added_classify_all_ile(self):
         from src.analysis.section_matcher import MatchResult

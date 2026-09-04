@@ -25,9 +25,10 @@ from src.models import ChangeType, Section
 from src.reporting.summary_builder import SummaryStats
 
 # NEDEN sadece bu üçü: cümle/kelime düzeyinde vurgulama SADECE "bu parça
-# eklendi/silindi/değişti" diyebilir -- IDENTICAL/MOVED/RENUMBERED tüm bir
-# Section'ın SINIFI'dır (bkz. render_change_type_badge), tek bir kelime/
-# cümle parçasının etiketi OLAMAZ.
+# eklendi/silindi/değişti" diyebilir -- İÇERİK DURUMU (IDENTICAL/MODIFIED/
+# ADDED/REMOVED) ve YAPISAL bayraklar (RENUMBERED/MOVED) tüm bir Section'ın
+# ÖZELLİĞİDİR (bkz. render_change_type_badge/render_structural_badges),
+# tek bir kelime/cümle parçasının etiketi OLAMAZ.
 _DIFF_CSS_KEYS = {
     "insert": "added",
     "delete": "removed",
@@ -129,28 +130,67 @@ def render_full_section_html(section: Section, change_type: ChangeType) -> str:
     return _span(section.joined_text, css_key)
 
 
-def render_change_type_badge(change_type: ChangeType) -> str:
-    """Bir ChangeType için Türkçe etiketli, renkli bir rozet (badge) span'i üretir."""
-    css_key = _css_key(change_type.value)
-    label = CHANGE_TYPE_LABELS_TR[change_type.value]
+def render_badge(label_key: str) -> str:
+    """
+    Bir Türkçe etiketli, renkli rozet (badge) span'i üretir -- `label_key`
+    ya bir `ChangeType.value` (İÇERİK durumu) ya da bir YAPISAL bayrak
+    anahtarı ("RENUMBERED" | "MOVED") olabilir; her ikisi de AYNI
+    COLOR_PALETTE/CHANGE_TYPE_LABELS_TR sözlüklerinden okunur (bkz.
+    config.py NEDEN notu -- bu sözlükler ChangeType enum'undan BAĞIMSIZ,
+    düz string anahtarlıdır).
+    """
+    css_key = _css_key(label_key)
+    label = CHANGE_TYPE_LABELS_TR[label_key]
     return f'<span class="mk-badge mk-badge-{css_key}">{_escape(label)}</span>'
 
 
-def render_row_header_html(old: Section | None, new: Section | None, change_type: ChangeType) -> str:
+def render_change_type_badge(change_type: ChangeType) -> str:
+    """Bir ChangeType (İÇERİK durumu) için rozet üretir."""
+    return render_badge(change_type.value)
+
+
+def render_structural_badges(*, numarasi_degisti: bool, yeri_degisti: bool) -> str:
     """
-    Bir karşılaştırma satırının başlığını (MADDE no + başlık + rozet) render
-    eder -- src/ui/components.py (canlı Streamlit) VE src/reporting/exporter.py
-    (bağımsız HTML dışa aktarım) TARAFINDAN PAYLAŞILIR, NEDEN: ikisinin de
-    AYNI kaçırma (escape) ve biçimlendirme mantığına ihtiyacı var; ayrı ayrı
-    yazılsaydı biri escape'i UNUTABİLİRDİ (nitekim Adım 6'da başlık hiç
+    YAPISAL bayraklar için rozet(ler) üretir -- SADECE True olanlar için,
+    boş string olabilir (hiçbir yapısal değişiklik yoksa). İÇERİK durumu
+    rozetinden AYRI tutulur çünkü BAĞIMSIZ bir boyuttur (bkz.
+    classifier.py NEDEN notu) -- bir satır hem içerik rozeti hem bir/iki
+    yapısal rozet TAŞIYABİLİR.
+    """
+    badges = []
+    if numarasi_degisti:
+        badges.append(render_badge("RENUMBERED"))
+    if yeri_degisti:
+        badges.append(render_badge("MOVED"))
+    return " ".join(badges)
+
+
+def render_row_header_html(
+    old: Section | None,
+    new: Section | None,
+    change_type: ChangeType,
+    *,
+    numarasi_degisti: bool = False,
+    yeri_degisti: bool = False,
+) -> str:
+    """
+    Bir karşılaştırma satırının başlığını (MADDE no + başlık + İÇERİK
+    rozeti + varsa YAPISAL rozet(ler)) render eder -- src/ui/components.py
+    (canlı Streamlit) VE src/reporting/exporter.py (bağımsız HTML dışa
+    aktarım) TARAFINDAN PAYLAŞILIR, NEDEN: ikisinin de AYNI kaçırma
+    (escape) ve biçimlendirme mantığına ihtiyacı var; ayrı ayrı yazılsaydı
+    biri escape'i UNUTABİLİRDİ (nitekim Adım 6'da başlık hiç
     kaçırılmıyordu -- bu birleştirme o hatayı da düzeltir).
     """
     madde_no = old.madde_no if old else (new.madde_no if new else None)
     baslik = (old.baslik if old else (new.baslik if new else None)) or ""
-    badge_html = render_change_type_badge(change_type)
+    badges_html = render_change_type_badge(change_type)
+    structural_html = render_structural_badges(numarasi_degisti=numarasi_degisti, yeri_degisti=yeri_degisti)
+    if structural_html:
+        badges_html = f"{badges_html} {structural_html}"
     return (
         f'<div class="mk-section-header"><strong>MADDE {madde_no} — '
-        f"{_escape(baslik)}</strong> {badge_html}</div>"
+        f"{_escape(baslik)}</strong> {badges_html}</div>"
     )
 
 
@@ -191,6 +231,8 @@ def render_summary_html(stats: SummaryStats) -> str:
         f"toplam <strong>{stats.toplam_karsilastirma}</strong> karşılaştırma "
         "birimi sınıflandırıldı.</p>"
     )
+
+    parts.append("<h3>İçerik Durumu</h3>")
     parts.append("<ul>")
     for change_type in ChangeType:
         count = stats.sayilar[change_type]
@@ -202,6 +244,23 @@ def render_summary_html(stats: SummaryStats) -> str:
             f"{count} madde (%{pct})</li>"
         )
     parts.append("</ul>")
+
+    # NEDEN AYRI bir <h3>/<ul>: yapısal sayılar İÇERİK durumundan BAĞIMSIZ
+    # bir boyuttur (bkz. classifier.py NEDEN notu) -- aynı satır HEM bir
+    # içerik durumuna HEM bir/iki yapısal bayrağa katkıda bulunabilir, bu
+    # yüzden ikisi TEK bir listede TOPLANAMAZ (yanıltıcı bir "toplam" izlenimi verirdi).
+    parts.append("<h3>Yapısal Değişiklikler</h3>")
+    parts.append("<ul>")
+    parts.append(
+        f'<li><span class="mk-badge mk-badge-renumbered">{_escape(CHANGE_TYPE_LABELS_TR["RENUMBERED"])}</span>: '
+        f'{stats.yapisal_sayilar["RENUMBERED"]} maddede madde numarası değişikliği tespit edildi.</li>'
+    )
+    parts.append(
+        f'<li><span class="mk-badge mk-badge-moved">{_escape(CHANGE_TYPE_LABELS_TR["MOVED"])}</span>: '
+        f'{stats.yapisal_sayilar["MOVED"]} maddede yeri değişikliği tespit edildi.</li>'
+    )
+    parts.append("</ul>")
+
     if stats.en_cok_degisen_bolum is not None:
         bolum, sayi = stats.en_cok_degisen_bolum
         parts.append(

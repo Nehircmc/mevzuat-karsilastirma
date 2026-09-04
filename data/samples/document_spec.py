@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.models import ChangeType
-
 REGULATION_TITLE = "KURUMSAL VERİ YÖNETİMİ VE AÇIK VERİ YÖNETMELİĞİ"
 
 # NEDEN gerçek olmayan bir kurum adı: Belgenin tamamen kurgusal olduğunu
@@ -29,10 +27,21 @@ KURUM_ADI = "Ulusal Veri ve İstatistik Genel Müdürlüğü"
 
 @dataclass(frozen=True)
 class ArticleSpec:
-    """Tek bir maddenin iki sürüm arasındaki durumunu tanımlar."""
+    """
+    Tek bir maddenin iki sürüm arasındaki durumunu tanımlar.
+
+    NEDEN change_type src.models.ChangeType (runtime enum'u) DEĞİL, düz
+    bir str: bu alan, test verisinin HANGİ senaryoyu (IDENTICAL/MODIFIED/
+    ADDED/REMOVED/RENUMBERED/MOVED) temsil ettiğini betimleyen bir
+    YAZAR/DOKÜMANTASYON etiketidir -- runtime'daki ChangeType ise SADECE
+    İÇERİK durumunu temsil eder (Adım 9'dan sonra RENUMBERED/MOVED artık
+    onun üyesi DEĞİL, bkz. src/models.py NEDEN notu). İkisini AYNI tipte
+    tutmak, ground_truth.json'un betimleyici zenginliğini runtime tipinin
+    kapsamına HAPSEDERDİ.
+    """
 
     id: str
-    change_type: ChangeType
+    change_type: str
     baslik: str
     madde_no_2019: int | None  # None => 2019'da yok (ADDED)
     madde_no_2023: int | None  # None => 2023'te yok (REMOVED)
@@ -53,7 +62,7 @@ class BolumSpec:
 ARTICLES: list[ArticleSpec] = [
     ArticleSpec(
         id="amac",
-        change_type=ChangeType.IDENTICAL,
+        change_type="IDENTICAL",
         baslik="Amaç",
         madde_no_2019=1,
         madde_no_2023=1,
@@ -69,7 +78,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="kapsam",
-        change_type=ChangeType.IDENTICAL,
+        change_type="IDENTICAL",
         baslik="Kapsam",
         madde_no_2019=2,
         madde_no_2023=2,
@@ -84,7 +93,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="dayanak",
-        change_type=ChangeType.IDENTICAL,
+        change_type="IDENTICAL",
         baslik="Dayanak",
         madde_no_2019=3,
         madde_no_2023=3,
@@ -104,7 +113,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="tanimlar",
-        change_type=ChangeType.MODIFIED,
+        change_type="MODIFIED",
         baslik="Tanımlar",
         madde_no_2019=4,
         madde_no_2023=4,
@@ -132,7 +141,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="veri_sorumlulugu",
-        change_type=ChangeType.IDENTICAL,
+        change_type="IDENTICAL",
         baslik="Veri Sorumluluğu",
         madde_no_2019=5,
         madde_no_2023=5,
@@ -147,7 +156,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="veri_paylasimi",
-        change_type=ChangeType.MODIFIED,
+        change_type="MODIFIED",
         baslik="Veri Paylaşımı",
         madde_no_2019=6,
         madde_no_2023=6,
@@ -174,7 +183,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="veri_kalitesi",
-        change_type=ChangeType.MODIFIED,
+        change_type="MODIFIED",
         baslik="Veri Kalitesi ve Güvenliği",
         madde_no_2019=7,
         madde_no_2023=7,
@@ -202,7 +211,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="arsivleme",
-        change_type=ChangeType.REMOVED,
+        change_type="REMOVED",
         baslik="Arşivleme Esasları",
         madde_no_2019=8,
         madde_no_2023=None,
@@ -217,7 +226,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="birim_sorumluluklari",
-        change_type=ChangeType.MODIFIED,
+        change_type="MODIFIED",
         baslik="Birim Sorumlulukları",
         madde_no_2019=9,
         madde_no_2023=8,  # Arşivleme (8) kaldırıldığı için 9 -> 8 kaydı
@@ -246,7 +255,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="ust_yonetim_sorumlulugu",
-        change_type=ChangeType.RENUMBERED,
+        change_type="RENUMBERED",
         baslik="Üst Yönetim Sorumluluğu",
         madde_no_2019=10,
         madde_no_2023=9,  # Arşivleme kaldırıldığı için 10 -> 9 kaydı
@@ -263,7 +272,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="veri_yonetisim_kurulu",
-        change_type=ChangeType.ADDED,
+        change_type="ADDED",
         baslik="Veri Yönetişim Kurulu",
         madde_no_2019=None,
         madde_no_2023=10,
@@ -279,7 +288,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="acik_veri_portali",
-        change_type=ChangeType.ADDED,
+        change_type="ADDED",
         baslik="Açık Veri Portalı",
         madde_no_2019=None,
         madde_no_2023=11,
@@ -295,7 +304,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="yururlukten_kaldirilan",
-        change_type=ChangeType.RENUMBERED,
+        change_type="RENUMBERED",
         baslik="Yürürlükten Kaldırılan Mevzuat",
         madde_no_2019=11,
         madde_no_2023=12,
@@ -309,7 +318,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="yururluk",
-        change_type=ChangeType.RENUMBERED,
+        change_type="RENUMBERED",
         baslik="Yürürlük",
         madde_no_2019=12,
         madde_no_2023=13,
@@ -323,7 +332,7 @@ ARTICLES: list[ArticleSpec] = [
     ),
     ArticleSpec(
         id="yurutme",
-        change_type=ChangeType.RENUMBERED,
+        change_type="RENUMBERED",
         baslik="Yürütme",
         madde_no_2019=13,
         madde_no_2023=14,

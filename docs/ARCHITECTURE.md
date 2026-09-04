@@ -95,11 +95,13 @@ YANLIŞ bir "bu iki madde aynı" iddiası üretilebilir.
   `src/analysis/section_matcher.py::_match_by_embedding` bu eşiğin altındaki
   atamaları REDDEDER, ilgili Section'ları `unmatched_old`/`unmatched_new`'de
   bırakır.
-- `src/config.py::IDENTICAL_CHAR_SIMILARITY_THRESHOLD` /
-  `RENUMBERED_CHAR_SIMILARITY_THRESHOLD` — `src/analysis/classifier.py`
-  bunları kullanarak IDENTICAL/RENUMBERED/MODIFIED ayrımını yapar; RENUMBERED
-  eşiği (0.995) IDENTICAL eşiğinden (0.98) bilinçli olarak DAHA SIKI tutulur
-  (bkz. METHODOLOGY.md §Kalibrasyon).
+- `src/config.py::IDENTICAL_CHAR_SIMILARITY_THRESHOLD` (0.98) —
+  `src/analysis/classifier.py::classify_content` bunun ALTINDAKİ bir
+  benzerliği "eşleşme değil, bu iki metin FARKLI" (MODIFIED) sayar; ÜSTÜNDE
+  kalanı IDENTICAL sayar. Adım 9'dan önce ayrıca bir
+  `RENUMBERED_CHAR_SIMILARITY_THRESHOLD` (0.995, IDENTICAL'dan DAHA SIKI)
+  vardı -- numara AYRI bir yapısal bayrağa taşınınca (bkz. İlke C notu)
+  bu ikinci eşiğin ayırt ettiği durum ARTIK anlamsızlaştı ve kaldırıldı.
 - Bu ilkenin GERÇEK bir bulguyla doğrulanmış hâli için bkz.
   METHODOLOGY.md'deki "Arşivleme Esasları / Açık Veri Portalı" kalibrasyon
   örneği — eşik 0.50 iken bu ilke ihlal ediliyordu, 0.65'e çıkarılarak
@@ -108,9 +110,23 @@ YANLIŞ bir "bu iki madde aynı" iddiası üretilebilir.
 ### İlke C — Kapalı Sözlük, Yorum Yok (ve "Hukuki Yorum Yok")
 
 > Analiz katmanı, `ChangeType` enum'unun (`IDENTICAL, MODIFIED, ADDED,
-> REMOVED, MOVED, RENUMBERED`) DIŞINDA bir değer üretemez. Raporlama
-> katmanı SERBEST METİN üretmez — SADECE bu kapalı kümenin sayımlarını
-> SABİT şablonlara yerleştirir.
+> REMOVED`) DIŞINDA bir İÇERİK durumu üretemez. Raporlama katmanı SERBEST
+> METİN üretmez — SADECE bu kapalı kümenin ve YAPISAL bayrakların
+> (`numarasi_degisti`, `yeri_degisti`) sayımlarını SABİT şablonlara
+> yerleştirir.
+
+**Neden İÇERİK durumu (`ChangeType`) ve YAPISAL bayraklar İKİ AYRI kapalı
+küme (Adım 9'da ayrıştırıldı):** `MOVED`/`RENUMBERED` başlangıçta
+`ChangeType`'ın üyesiydi. Bu, bir maddenin HEM numarası HEM içeriği
+değiştiğinde (bkz. ground_truth.json/birim_sorumlulukları) YAPISAL olguyu
+SESSİZCE KAYBEDİYORDU -- satır sadece `MODIFIED` sayılıyor, "numarası da
+değişti" bilgisi HİÇBİR YERDE görünmüyordu (kullanıcı panelinde "Değişti: 4"
+ile "Numarası Değişti: 4" yan yana görününce de bu, iki bağımsız sayı gibi
+DEĞİL, örtüşen/karışık bir sınıflandırma gibi okunuyordu). Şimdi HER Section
+İKİ BAĞIMSIZ soruya cevap taşır: "içeriği değişti mi" (`ChangeType`) ve
+"numarası/konumu değişti mi" (bool bayraklar) -- ikisi AYNI ANDA true
+olabilir, biri diğerini MASKELEMEZ. Bkz. `src/analysis/classifier.py` modül
+NEDEN notu ve METHODOLOGY.md'nin Adım 5 bölümü.
 
 **Neden (genel):** "Yorum yok" ilkesi TİP SİSTEMİYLE zorlanır, iyi niyetle
 değil — `ChangeType(str, Enum)` dışında bir string, hiçbir katmanda
@@ -136,11 +152,13 @@ boru hattının değil. Bu proje BİLEREK bu sınırı aşmaz:
   `tests/test_reporting.py::test_deterministik_iki_cagri_ayni_sonucu_verir`).
 
 **Nasıl zorlanıyor (kod):**
-- `src/models.py::ChangeType` — kapalı enum, `str`'den türer (Excel/JSON
-  dışa aktarımda doğrudan okunabilir string olarak serileşir).
-- `src/analysis/classifier.py::classify_match` — SADECE üç sinyale
-  (madde_no eşitliği, karakter benzerliği, konum/heading_path) dayanan
-  DETERMİNİSTİK bir karar ağacı; hiçbir "serbest" dal yoktur.
+- `src/models.py::ChangeType` — kapalı enum (4 üye), `str`'den türer
+  (Excel/JSON dışa aktarımda doğrudan okunabilir string olarak serileşir).
+- `src/analysis/classifier.py::classify_content` — SADECE karakter
+  benzerliğine dayanan, madde_no'dan TAMAMEN BAĞIMSIZ, DETERMİNİSTİK bir
+  karar; `is_renumbered`/`is_moved` de kendi SADE sinyallerine (numara
+  eşitliği, konum/heading_path) dayanan AYRI, bağımsız fonksiyonlardır --
+  hiçbirinde "serbest" bir dal yoktur.
 - `src/reporting/summary_builder.py::SummaryStats` — özetin dayandığı TÜM
   sayılar, metin ÜRETİMİNDEN (render_summary_markdown/html) AYRI bir
   dataclass'ta tutulur; bu ayrım "hangi sayılar" ile "nasıl yazılır"
@@ -204,18 +222,21 @@ değişmiş olsa bile      │ (eşik altı reddedilir, bkz. İlke B)  │  mode
                                      ▼ (eşleşen HER çift için)
                      ┌─────────────────────────────────────┐
 Katman 3  (METİNSEL)  │ classifier.py                        │
-"Eşleşen bu çift GER-  │ difflib karakter benzerliği + numara │  ucuz, deterministik,
-ÇEKTEN aynı mı, yoksa  │ eşitliği + konum sinyali              │  embedding'e BAĞIMLI
-DEĞİŞMİŞ mi?"          └─────────────────────────────────────┘  DEĞİL
+"Eşleşen bu çiftin      │ difflib karakter benzerliği (İÇERİK) │  ucuz, deterministik,
+İÇERİĞİ mi, NUMARASI    │ + numara eşitliği/konum (YAPISAL,     │  embedding'e BAĞIMLI
+mı, İKİSİ Mİ değişti?"  │ BAĞIMSIZ bayraklar)                   │  DEĞİL
+                     └─────────────────────────────────────┘
 ```
 
 Bu üç katmanın birbirinden AYRI tutulmasının nedeni: Katman 1 ve 2 "hangi
 Section hangi Section'a karşılık geliyor" sorusuna (bir `SectionMatch`
-üretir); Katman 3 ise BAŞKA bir soruya ("bu eşleşme IDENTICAL mi MODIFIED mi
-RENUMBERED mi MOVED mi") cevap verir. İkisini TEK bir adımda birleştirmek,
-"eşleşme bulma" ile "değişikliği sınıflandırma" mantığını birbirine
-KARIŞTIRIRDI — oysa bunlar bağımsız test edilebilir, bağımsız kalibre
-edilebilir iki farklı karardır (bkz. METHODOLOGY.md).
+üretir); Katman 3 ise BAŞKA bir soruya cevap verir -- ve bu soru TEK bir
+cevap DEĞİL, İKİ BAĞIMSIZ cevaptır: "içeriği IDENTICAL mi MODIFIED mi"
+(`classify_content`) VE "numarası/konumu değişti mi"
+(`is_renumbered`/`is_moved`, bkz. İlke C). Eşleşme bulma ile sınıflandırmayı
+TEK bir adımda birleştirmek, "eşleşme bulma" ile "değişikliği sınıflandırma"
+mantığını birbirine KARIŞTIRIRDI — oysa bunlar bağımsız test edilebilir,
+bağımsız kalibre edilebilir kararlardır (bkz. METHODOLOGY.md).
 
 Ayrıntılı algoritma açıklaması ve gerçek kalibrasyon bulguları için bkz.
 [`METHODOLOGY.md`](./METHODOLOGY.md).
@@ -301,11 +322,10 @@ yerine, HANGİ senaryoların GERÇEK veriyle DOĞRULANMADIĞINI açıkça
 belirtmek, Mimari İlke C'nin ("yorum yok, sadece doğrulanmış gerçek")
 bu belgeye uygulanmış hâlidir:
 
-- **MOVED sınıflandırması** (`classifier.py::_moved`) sadece SENTETİK
-  testlerle doğrulandı — `ground_truth.json`'da gerçek bir MOVED örneği
-  yok (regülasyon metninde bir maddenin numarası SABİT kalıp sadece
-  bölümünün değiştiği senaryo nadirdir ve mevcut test korpusunda temsil
-  edilmiyor).
+- **"Yeri değişti" bayrağı** (`classifier.py::is_moved`) sadece SENTETİK
+  testlerle doğrulandı — `ground_truth.json`'da gerçek bir örneği yok
+  (regülasyon metninde bir maddenin numarası SABİT kalıp sadece bölümünün
+  değiştiği senaryo nadirdir ve mevcut test korpusunda temsil edilmiyor).
 - **L2 (embedding) pozitif örneği yok** — mevcut test korpusundaki HER
   gerçek eşleşme L1 (kural tabanlı) ile çözülüyor; L2'nin GERÇEKTEN
   çözmesi gereken "hem numarası HEM başlığı değişmiş ama aynı madde"

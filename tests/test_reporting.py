@@ -21,16 +21,51 @@ from src.config import CHANGE_TYPE_LABELS_TR, SAMPLES_DIR
 from src.models import ChangeType
 from src.reporting.exporter import export_to_csv, export_to_excel, export_to_html
 from src.reporting.html_renderer import render_summary_html
-from src.reporting.metrics import build_detail_dataframe, build_summary_dataframe
+from src.reporting.metrics import build_detail_dataframe, build_structural_dataframe, build_summary_dataframe
 from src.reporting.summary_builder import SummaryStats, build_summary_stats, render_summary_markdown
 
 with open(SAMPLES_DIR / "ground_truth.json", encoding="utf-8") as f:
     _GROUND_TRUTH = json.load(f)
 
+# NEDEN ground_truth.json'daki eski (6 değerli) "change_type" alanı BURADA
+# İKİYE AYRIŞTIRILARAK yorumlanır (dosya DEĞİŞTİRİLMEDİ -- bkz. Adım 9 notu,
+# tests/test_differ.py'deki AYNI gerekçe): "RENUMBERED"/"MOVED" etiketi
+# "içerik AYNI, sadece numara/yer FARKLI" anlamına gelir -- yeni modelde
+# content_status=IDENTICAL + ilgili yapısal bayrak=True'ya karşılık gelir.
+#
+# NEDEN _EXPECTED_STRUCTURAL_COUNTS "change_type" etiketinden DEĞİL,
+# DOĞRUDAN madde_no_2019 != madde_no_2023 karşılaştırmasından türetilir:
+# classifier.py::is_renumbered de TAM OLARAK böyle çalışır (etiketten
+# BAĞIMSIZ, saf numara karşılaştırması) -- örn. "MODIFIED" etiketli
+# birim_sorumluluklari'nın (9->8) numarası DA değişmiştir, sadece "RENUMBERED"
+# etiketli maddelere bakmak bu satırı KAÇIRIRDI (bkz. Adım 9'un TAM konusu).
 _EXPECTED_COUNTS: dict[ChangeType, int] = dict.fromkeys(ChangeType, 0)
+_EXPECTED_STRUCTURAL_COUNTS = {"RENUMBERED": 0, "MOVED": 0}
 for _m in _GROUND_TRUTH["maddeler"]:
-    _EXPECTED_COUNTS[ChangeType(_m["change_type"])] += 1
+    _content_type = (
+        ChangeType.IDENTICAL
+        if _m["change_type"] in ("IDENTICAL", "RENUMBERED", "MOVED")
+        else ChangeType(_m["change_type"])
+    )
+    _EXPECTED_COUNTS[_content_type] += 1
+    _no19, _no23 = _m["madde_no_2019"], _m["madde_no_2023"]
+    if _no19 is not None and _no23 is not None and _no19 != _no23:
+        _EXPECTED_STRUCTURAL_COUNTS["RENUMBERED"] += 1
+    # NEDEN MOVED her zaman 0: ground_truth.json'da gerçek bir MOVED örneği
+    # yok (bkz. docs/ARCHITECTURE.md §7 -- bilinen sınırlama).
 _EXPECTED_TOTAL = len(_GROUND_TRUTH["maddeler"])
+_DETAIL_COLUMNS = [
+    "Değişim Türü",
+    "Numarası Değişti",
+    "Yeri Değişti",
+    "Eski Madde No",
+    "Yeni Madde No",
+    "Başlık",
+    "Eski Bölüm",
+    "Yeni Bölüm",
+    "Eski Metin",
+    "Yeni Metin",
+]
 
 _OLD_BYTES = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
 _NEW_BYTES = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
@@ -59,7 +94,7 @@ class TestMetricsSummaryDataFrame:
         df = build_summary_dataframe(_RESULT)
         assert 99.5 <= df["Yüzde"].sum() <= 100.5
 
-    def test_bos_sonucta_bile_alti_satir_ve_dogru_kolonlar(self):
+    def test_bos_sonucta_bile_dort_satir_ve_dogru_kolonlar(self):
         from src.analysis.pipeline import ComparisonResult
         from src.models import DocumentMeta
 
@@ -69,9 +104,47 @@ class TestMetricsSummaryDataFrame:
             rows=[],
         )
         df = build_summary_dataframe(empty)
+        assert len(df) == 4  # IDENTICAL/MODIFIED/ADDED/REMOVED
         assert list(df.columns) == ["Değişim Türü", "Sayı", "Yüzde"]
         assert (df["Sayı"] == 0).all()
         assert (df["Yüzde"] == 0.0).all()
+
+
+class TestMetricsStructuralDataFrame:
+    """
+    build_structural_dataframe -- İÇERİK durumundan BAĞIMSIZ, "Numarası
+    Değişti"/"Yeri Değişti" sayımı (bkz. classifier.py NEDEN notu).
+    """
+
+    def test_iki_satir_dogru_kolonlar(self):
+        df = build_structural_dataframe(_RESULT)
+        assert len(df) == 2
+        assert list(df.columns) == ["Yapısal Değişiklik", "Sayı"]
+
+    def test_sayilar_ground_truth_ile_esler(self):
+        # NEDEN 5 (4 DEĞİL): eski modelde SADECE saf RENUMBERED maddeler
+        # (4 tanesi) sayılırdı -- birim_sorumluluklari (9->8) hem numarası
+        # HEM içeriği değiştiği için MODIFIED'a düşüp bu sayımdan
+        # KAYBOLURDU. Yeni modelde numarasi_degisti içerikten BAĞIMSIZ
+        # hesaplandığı için o madde de burada sayılır (bkz. Adım 9'un TAM
+        # konusu, _EXPECTED_STRUCTURAL_COUNTS NEDEN notu).
+        df = build_structural_dataframe(_RESULT)
+        by_label = dict(zip(df["Yapısal Değişiklik"], df["Sayı"]))
+        assert by_label[CHANGE_TYPE_LABELS_TR["RENUMBERED"]] == _EXPECTED_STRUCTURAL_COUNTS["RENUMBERED"] == 5
+        assert by_label[CHANGE_TYPE_LABELS_TR["MOVED"]] == _EXPECTED_STRUCTURAL_COUNTS["MOVED"] == 0
+
+    def test_bos_sonucta_bile_iki_satir_sifir_sayi(self):
+        from src.analysis.pipeline import ComparisonResult
+        from src.models import DocumentMeta
+
+        empty = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=[],
+        )
+        df = build_structural_dataframe(empty)
+        assert len(df) == 2
+        assert (df["Sayı"] == 0).all()
 
 
 class TestMetricsDetailDataFrame:
@@ -81,16 +154,7 @@ class TestMetricsDetailDataFrame:
 
     def test_kolonlar_beklenen_sirada(self):
         df = build_detail_dataframe(_RESULT)
-        assert list(df.columns) == [
-            "Değişim Türü",
-            "Eski Madde No",
-            "Yeni Madde No",
-            "Başlık",
-            "Eski Bölüm",
-            "Yeni Bölüm",
-            "Eski Metin",
-            "Yeni Metin",
-        ]
+        assert list(df.columns) == _DETAIL_COLUMNS
 
     def test_removed_satirda_yeni_madde_no_bos(self):
         df = build_detail_dataframe(_RESULT)
@@ -105,6 +169,29 @@ class TestMetricsDetailDataFrame:
         assert len(added) == 2
         assert added["Eski Madde No"].isna().all()
 
+    def test_birim_sorumluluklari_satirinda_numarasi_degisti_evet(self):
+        # NEDEN kritik: Adım 9'un TAM konusu -- bu madde hem İÇERİK hem
+        # NUMARA olarak değişti (bkz. ground_truth.json/birim_sorumlulukları,
+        # 2019 no.9 -> 2023 no.8); detay tablosunda İKİSİ de görünmeli.
+        df = build_detail_dataframe(_RESULT)
+        satir = df[df["Başlık"] == "Birim Sorumlulukları"].iloc[0]
+        assert satir["Değişim Türü"] == CHANGE_TYPE_LABELS_TR["MODIFIED"]
+        assert satir["Numarası Değişti"] == "Evet"
+        assert satir["Yeri Değişti"] == "Hayır"
+
+    def test_yururluk_satirinda_icerik_ayni_ama_numarasi_degisti_evet(self):
+        df = build_detail_dataframe(_RESULT)
+        satir = df[df["Başlık"] == "Yürürlük"].iloc[0]
+        assert satir["Değişim Türü"] == CHANGE_TYPE_LABELS_TR["IDENTICAL"]
+        assert satir["Numarası Değişti"] == "Evet"
+
+    def test_amac_satirinda_hicbir_sey_degismedi(self):
+        df = build_detail_dataframe(_RESULT)
+        satir = df[df["Başlık"] == "Amaç"].iloc[0]
+        assert satir["Değişim Türü"] == CHANGE_TYPE_LABELS_TR["IDENTICAL"]
+        assert satir["Numarası Değişti"] == "Hayır"
+        assert satir["Yeri Değişti"] == "Hayır"
+
     def test_bos_sonucta_bile_kolon_basliklari_korunur(self):
         from src.analysis.pipeline import ComparisonResult
         from src.models import DocumentMeta
@@ -116,16 +203,7 @@ class TestMetricsDetailDataFrame:
         )
         df = build_detail_dataframe(empty)
         assert len(df) == 0
-        assert list(df.columns) == [
-            "Değişim Türü",
-            "Eski Madde No",
-            "Yeni Madde No",
-            "Başlık",
-            "Eski Bölüm",
-            "Yeni Bölüm",
-            "Eski Metin",
-            "Yeni Metin",
-        ]
+        assert list(df.columns) == _DETAIL_COLUMNS
 
 
 def _tek_maddelik_sonuc(metin: str, *, baslik: str = "Test") -> "ComparisonResult":
@@ -231,12 +309,18 @@ class TestSummaryBuilderStats:
             assert stats.yuzdeler[change_type] == expected_pct
 
     def test_en_cok_degisen_bolum_ucuncu_bolumdur(self):
-        # NEDEN ÜÇÜNCÜ BÖLÜM: birim_sorumluluklari(MODIFIED),
-        # ust_yonetim_sorumlulugu(RENUMBERED), veri_yonetisim_kurulu(ADDED),
-        # acik_veri_portali(ADDED) -- 4 IDENTICAL-olmayan madde, ground
-        # truth'taki HERHANGİ başka bir bölümden fazla.
+        # NEDEN ÜÇÜNCÜ BÖLÜM: birim_sorumluluklari (MODIFIED içerik +
+        # numarası değişti), ust_yonetim_sorumlulugu (İÇERİK IDENTICAL ama
+        # numarası değişti -- yine de "bir şey değişti" sayılır, bkz.
+        # summary_builder.py::_en_cok_degisen_bolum NEDEN notu),
+        # veri_yonetisim_kurulu(ADDED), acik_veri_portali(ADDED) -- 4 madde,
+        # ground truth'taki HERHANGİ başka bir bölümden fazla.
         stats = build_summary_stats(_RESULT)
         assert stats.en_cok_degisen_bolum == ("ÜÇÜNCÜ BÖLÜM", 4)
+
+    def test_yapisal_sayilar_ground_truth_ile_esler(self):
+        stats = build_summary_stats(_RESULT)
+        assert stats.yapisal_sayilar == _EXPECTED_STRUCTURAL_COUNTS
 
     def test_hicbir_degisiklik_yoksa_en_cok_degisen_bolum_nonedir(self):
         from src.analysis.classifier import ClassifiedSection
@@ -261,11 +345,31 @@ class TestSummaryBuilderStats:
 
 
 class TestSummaryBuilderMarkdown:
-    def test_tum_change_type_etiketleri_gecer(self):
+    def test_tum_icerik_ve_yapisal_etiketler_gecer(self):
         stats = build_summary_stats(_RESULT)
         md = render_summary_markdown(stats)
         for change_type in ChangeType:
             assert CHANGE_TYPE_LABELS_TR[change_type.value] in md
+        assert CHANGE_TYPE_LABELS_TR["RENUMBERED"] in md
+        assert CHANGE_TYPE_LABELS_TR["MOVED"] in md
+
+    def test_icerik_ve_yapisal_iki_ayri_baslik_altinda(self):
+        # NEDEN: bu ikisi BAĞIMSIZ boyutlardır, TEK bir listede
+        # birleştirilmemeli (bkz. modül NEDEN notu) -- "İçerik Durumu" ve
+        # "Yapısal Değişiklikler" AYRI başlıklar altında görünmeli.
+        stats = build_summary_stats(_RESULT)
+        md = render_summary_markdown(stats)
+        assert "### İçerik Durumu" in md
+        assert "### Yapısal Değişiklikler" in md
+        assert md.index("### İçerik Durumu") < md.index("### Yapısal Değişiklikler")
+
+    def test_yapisal_cumleler_istenen_ifadeyle_eslesir(self):
+        # NEDEN: kullanıcının BİREBİR istediği ifade -- "X maddede madde
+        # numarası değişikliği tespit edildi."
+        stats = build_summary_stats(_RESULT)
+        md = render_summary_markdown(stats)
+        assert f"{_EXPECTED_STRUCTURAL_COUNTS['RENUMBERED']} maddede madde numarası değişikliği tespit edildi." in md
+        assert f"{_EXPECTED_STRUCTURAL_COUNTS['MOVED']} maddede yeri değişikliği tespit edildi." in md
 
     def test_sayilar_metinde_gecer(self):
         stats = build_summary_stats(_RESULT)
@@ -286,6 +390,7 @@ class TestSummaryBuilderMarkdown:
             yeni_toplam_madde=0,
             sayilar=dict.fromkeys(ChangeType, 0),
             yuzdeler=dict.fromkeys(ChangeType, 0.0),
+            yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
             en_cok_degisen_bolum=None,
         )
         md = render_summary_markdown(stats)
@@ -304,25 +409,36 @@ class TestSummaryHtml:
             yeni_toplam_madde=1,
             sayilar=dict.fromkeys(ChangeType, 0),
             yuzdeler=dict.fromkeys(ChangeType, 0.0),
+            yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
             en_cok_degisen_bolum=("<script>alert(1)</script>", 3),
         )
         html = render_summary_html(stats)
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
 
-    def test_her_change_type_rozeti_gecer(self):
+    def test_her_icerik_ve_yapisal_rozet_gecer(self):
         stats = build_summary_stats(_RESULT)
         html = render_summary_html(stats)
         for change_type in ChangeType:
             assert f"mk-badge-{change_type.value.lower()}" in html
+        assert "mk-badge-renumbered" in html
+        assert "mk-badge-moved" in html
+
+    def test_yapisal_sayilar_html_metninde_gecer(self):
+        stats = build_summary_stats(_RESULT)
+        html = render_summary_html(stats)
+        assert f"{_EXPECTED_STRUCTURAL_COUNTS['RENUMBERED']} maddede madde numarası değişikliği tespit edildi." in html
 
 
 class TestExporterExcel:
-    def test_iki_sayfa_uretir_dogru_boyutlarda(self):
+    def test_uc_sayfa_uretir_dogru_boyutlarda(self):
+        # NEDEN üç (iki DEĞİL): "Özet" (İÇERİK durumu) + "Yapısal" (Numarası/
+        # Yeri Değişti -- bkz. classifier.py NEDEN notu) + "Detay".
         xlsx_bytes = export_to_excel(_RESULT)
         sheets = pd.read_excel(BytesIO(xlsx_bytes), sheet_name=None)
-        assert set(sheets.keys()) == {"Özet", "Detay"}
+        assert set(sheets.keys()) == {"Özet", "Yapısal", "Detay"}
         assert sheets["Özet"].shape == (len(ChangeType), 3)
+        assert sheets["Yapısal"].shape == (2, 2)
         assert sheets["Detay"].shape[0] == _EXPECTED_TOTAL
 
     def test_detay_sayfasi_sayimla_tutarli(self):
@@ -331,6 +447,13 @@ class TestExporterExcel:
         for change_type, expected in _EXPECTED_COUNTS.items():
             label = CHANGE_TYPE_LABELS_TR[change_type.value]
             assert (detay["Değişim Türü"] == label).sum() == expected
+
+    def test_yapisal_sayfa_sayimla_tutarli(self):
+        xlsx_bytes = export_to_excel(_RESULT)
+        yapisal = pd.read_excel(BytesIO(xlsx_bytes), sheet_name="Yapısal")
+        by_label = dict(zip(yapisal["Yapısal Değişiklik"], yapisal["Sayı"]))
+        assert by_label[CHANGE_TYPE_LABELS_TR["RENUMBERED"]] == _EXPECTED_STRUCTURAL_COUNTS["RENUMBERED"]
+        assert by_label[CHANGE_TYPE_LABELS_TR["MOVED"]] == _EXPECTED_STRUCTURAL_COUNTS["MOVED"]
 
 
 class TestExporterCsv:
@@ -341,7 +464,7 @@ class TestExporterCsv:
     def test_baslik_satiri_dogru(self):
         csv_bytes = export_to_csv(_RESULT)
         first_line = csv_bytes.decode("utf-8-sig").splitlines()[0]
-        assert first_line == "Değişim Türü,Eski Madde No,Yeni Madde No,Başlık,Eski Bölüm,Yeni Bölüm,Eski Metin,Yeni Metin"
+        assert first_line == ",".join(_DETAIL_COLUMNS)
 
     def test_satir_sayisi_basliklar_dahil(self):
         csv_bytes = export_to_csv(_RESULT)
@@ -362,10 +485,12 @@ class TestExporterHtml:
         assert "<style>" in html_text and "</style>" in html_text
         assert "mk-badge-modified" in html_text  # CSS enjekte edilmiş
 
-    def test_css_tum_change_type_renklerini_icerir(self):
+    def test_css_tum_icerik_ve_yapisal_renklerini_icerir(self):
         html_text = export_to_html(_RESULT).decode("utf-8")
         for change_type in ChangeType:
             assert f".mk-badge-{change_type.value.lower()}" in html_text
+        assert ".mk-badge-renumbered" in html_text
+        assert ".mk-badge-moved" in html_text
 
     def test_her_maddenin_basligi_gecer(self):
         html_text = export_to_html(_RESULT).decode("utf-8")
@@ -379,6 +504,19 @@ class TestExporterHtml:
     def test_kaldirilan_madde_kirmizi_sinifla_gorunur(self):
         html_text = export_to_html(_RESULT).decode("utf-8")
         assert "mk-diff-removed" in html_text
+
+    def test_yapisal_rozetler_satir_basliklarinda_da_gorunur(self):
+        # NEDEN kritik: export_to_html, render_row_header_html'i
+        # numarasi_degisti/yeri_degisti PARAMETRELERİ OLMADAN çağırıyordu
+        # (bu Adım 9 sırasında fark edilip düzeltilen bir hataydı) --
+        # yapısal rozetler SADECE Yönetici Özeti'nde değil, HER maddenin
+        # kendi başlığında da görünmeli (bkz. html_renderer.py::
+        # render_row_header_html).
+        html_text = export_to_html(_RESULT).decode("utf-8")
+        # "Yürürlük" satırı: içerik IDENTICAL + numarası değişti.
+        yururluk_index = html_text.index("Yürürlük<")
+        civar = html_text[yururluk_index : yururluk_index + 400]
+        assert "mk-badge-renumbered" in civar, "Yürürlük satırının başlığında 'numarası değişti' rozeti yok"
 
     def test_html_ozel_karakter_icermez_kacirilmamis(self):
         # NEDEN: gövde metninde "<" "&" gibi karakterler varsa (bkz.

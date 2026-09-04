@@ -19,10 +19,13 @@ from src.models import ChangeType, Section, TextUnit
 from src.parsing.structure_parser import parse_structure
 from src.reporting.html_renderer import (
     known_palette_keys,
+    render_badge,
     render_change_type_badge,
     render_full_section_html,
+    render_row_header_html,
     render_section_diff_html,
     render_sentence_diff,
+    render_structural_badges,
     render_word_diffs,
 )
 
@@ -162,9 +165,90 @@ class TestRenderChangeTypeBadge:
         assert f'mk-badge-{change_type.value.lower()}' in html
         assert CHANGE_TYPE_LABELS_TR[change_type.value] in html
 
-    def test_known_palette_keys_change_type_ile_esit(self):
-        assert known_palette_keys() == {ct.value for ct in ChangeType}
+    def test_known_palette_keys_icerik_durumu_ve_yapisal_bayraklari_kapsar(self):
+        # NEDEN eşitlik DEĞİL alt küme kontrolü: COLOR_PALETTE artık 6
+        # anahtar taşıyor -- 4'ü ChangeType (İÇERİK durumu), 2'si
+        # ("RENUMBERED"/"MOVED") YAPISAL bayrak anahtarı (bkz. config.py
+        # NEDEN notu, classifier.py) -- ikisi ARTIK aynı küme değil.
+        assert {ct.value for ct in ChangeType} <= known_palette_keys()
+        assert {"RENUMBERED", "MOVED"} <= known_palette_keys()
         assert known_palette_keys() == set(COLOR_PALETTE.keys())
+
+
+class TestRenderStructuralBadges:
+    """
+    YAPISAL bayraklar (numarasi_degisti/yeri_degisti) İÇERİK durumundan
+    BAĞIMSIZ rozetlerdir -- bkz. classifier.py NEDEN notu.
+    """
+
+    def test_ikisi_de_false_ise_bos_string(self):
+        assert render_structural_badges(numarasi_degisti=False, yeri_degisti=False) == ""
+
+    def test_sadece_numarasi_degisti(self):
+        html = render_structural_badges(numarasi_degisti=True, yeri_degisti=False)
+        assert "mk-badge-renumbered" in html
+        assert CHANGE_TYPE_LABELS_TR["RENUMBERED"] in html
+        assert "mk-badge-moved" not in html
+
+    def test_sadece_yeri_degisti(self):
+        html = render_structural_badges(numarasi_degisti=False, yeri_degisti=True)
+        assert "mk-badge-moved" in html
+        assert CHANGE_TYPE_LABELS_TR["MOVED"] in html
+        assert "mk-badge-renumbered" not in html
+
+    def test_ikisi_de_true_ise_iki_rozet_de_gorunur(self):
+        html = render_structural_badges(numarasi_degisti=True, yeri_degisti=True)
+        assert "mk-badge-renumbered" in html
+        assert "mk-badge-moved" in html
+
+    def test_render_badge_yapisal_anahtarla_da_calisir(self):
+        # NEDEN: render_badge, ChangeType.value İLE de düz bir yapısal
+        # bayrak anahtarıyla ("RENUMBERED"/"MOVED") DA çalışan tek bir
+        # genel rozet fonksiyonudur (bkz. html_renderer.py NEDEN notu);
+        # render_change_type_badge SADECE bunun ChangeType'a özel bir
+        # sarmalayıcısıdır.
+        assert render_change_type_badge(ChangeType.MODIFIED) == render_badge("MODIFIED")
+        html = render_badge("MOVED")
+        assert "mk-badge-moved" in html
+        assert CHANGE_TYPE_LABELS_TR["MOVED"] in html
+
+
+class TestRenderRowHeaderHtml:
+    def _section(self, madde_no: int, baslik: str) -> Section:
+        return Section(
+            doc_id="t", heading_path=(f"MADDE {madde_no}",), section_type="MADDE",
+            madde_no=madde_no, baslik=baslik, order_index=0, units=[],
+        )
+
+    def test_yapisal_bayrak_yoksa_sadece_icerik_rozeti_gorunur(self):
+        old = self._section(1, "Amaç")
+        html = render_row_header_html(old, old, ChangeType.IDENTICAL)
+        assert "mk-badge-identical" in html
+        assert "mk-badge-renumbered" not in html
+        assert "mk-badge-moved" not in html
+
+    def test_numarasi_degisti_ise_ikinci_rozet_de_eklenir(self):
+        old = self._section(12, "Yürürlük")
+        new = self._section(13, "Yürürlük")
+        html = render_row_header_html(old, new, ChangeType.IDENTICAL, numarasi_degisti=True)
+        assert "mk-badge-identical" in html
+        assert "mk-badge-renumbered" in html
+
+    def test_hem_icerik_hem_iki_yapisal_rozet_birlikte_gorunebilir(self):
+        old = self._section(9, "Birim Sorumlulukları")
+        new = self._section(8, "Birim Sorumlulukları")
+        html = render_row_header_html(
+            old, new, ChangeType.MODIFIED, numarasi_degisti=True, yeri_degisti=True
+        )
+        assert "mk-badge-modified" in html
+        assert "mk-badge-renumbered" in html
+        assert "mk-badge-moved" in html
+
+    def test_baslik_kaciriliyor(self):
+        old = self._section(1, "<script>alert(1)</script>")
+        html = render_row_header_html(old, old, ChangeType.IDENTICAL)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
 
 
 class TestGercekOrnekBelgedeDiffRenderi:

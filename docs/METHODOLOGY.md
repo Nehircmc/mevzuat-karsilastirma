@@ -143,56 +143,66 @@ test ettiği bir davranıştır (bkz. `document_spec.py`'deki `aciklama` alanı)
 (`equal`), sadece fıkra (4) 2023'te eklenmiş (`insert`) — differ TÜM
 maddeyi değil sadece eklenen fıkrayı işaretler.
 
-## Adım 5 — Classifier: `ChangeType` kararı
+## Adım 5 (Adım 9'da yeniden tasarlandı) — Classifier: içerik durumu + yapısal bayraklar
 
-`src/analysis/classifier.py::classify_match`, SADECE üç ucuz/deterministik
-sinyale bakan bir karar ağacıdır (embedding'e BAĞIMLI DEĞİLDİR — L1
-eşleşmelerinde embedder hiç çağrılmamış olabilir):
+**Bu bölüm Adım 9'da GÜNCELLENDİ.** İlk tasarımda `ChangeType` altı değerliydi
+(`IDENTICAL, MODIFIED, ADDED, REMOVED, MOVED, RENUMBERED`) ve bir madde HEM
+numarası HEM içeriği değiştiğinde (gerçek örnek: 2019 MADDE 9 → 2023 MADDE 8
+"Birim Sorumlulukları") numara değişimi SESSİZCE KAYBOLUYORDU — satır sadece
+`MODIFIED` sayılıyordu, panelde "Numarası Değişti" sayacı bu maddeyi HİÇ
+YANSITMIYORDU. Kullanıcı bunu fark edip talep etti; çözüm İÇERİK durumu ile
+YAPISAL değişikliği İKİ BAĞIMSIZ boyuta ayırmaktı.
+
+`src/analysis/classifier.py`, ARTIK üç AYRI, birbirinden BAĞIMSIZ fonksiyon
+sunar (hiçbiri embedding'e bağımlı değil — L1 eşleşmelerinde embedder hiç
+çağrılmamış olabilir):
 
 ```
-madde_no AYNI mı?
-├─ EVET
-│   karakter benzerliği ≥ 0.98 mi? (IDENTICAL_CHAR_SIMILARITY_THRESHOLD)
-│   ├─ EVET
-│   │   konum/bağlam (heading_path VEYA order_index) önemli ölçüde kaydı mı?
-│   │   ├─ EVET → MOVED
-│   │   └─ HAYIR → IDENTICAL
-│   └─ HAYIR → MODIFIED
-└─ HAYIR (numara kaymış)
-    karakter benzerliği ≥ 0.995 mi? (RENUMBERED_CHAR_SIMILARITY_THRESHOLD)
-    ├─ EVET → RENUMBERED
-    └─ HAYIR → MODIFIED   (hem numara HEM içerik değişmiş)
+classify_content(match)  → İÇERİK durumu (ChangeType: IDENTICAL | MODIFIED)
+    karakter benzerliği ≥ 0.98 mi? (IDENTICAL_CHAR_SIMILARITY_THRESHOLD)
+    ├─ EVET → IDENTICAL      (madde_no'ya HİÇ BAKILMAZ)
+    └─ HAYIR → MODIFIED
+
+is_renumbered(match)     → YAPISAL bayrak (bool)
+    old.madde_no != new.madde_no
+
+is_moved(match)           → YAPISAL bayrak (bool)
+    heading_path[:-1] (KISIM/BÖLÜM zinciri) değişti mi, YA DA
+    order_index farkı ≥ MOVED_MIN_POSITION_DELTA (3) mi
 ```
 
-REMOVED (L1+L2 sonrası hâlâ `unmatched_old`'da kalan) ve ADDED
-(`unmatched_new`'de kalan) için sınıflandırma zaten doğrudan bellidir.
+REMOVED (`unmatched_old`'da kalan) ve ADDED (`unmatched_new`'de kalan) için
+içerik durumu zaten doğrudan bellidir; yapısal bayraklar bu iki durumda
+anlamsız olduğu için HER ZAMAN `False`'tur (karşılaştırılacak bir çift yok).
 
-**Neden RENUMBERED eşiği (0.995) IDENTICAL eşiğinden (0.98) DAHA SIKI:**
-RENUMBERED "numara değişti ama metin (neredeyse) BİREBİR aynı" iddiasıdır;
-IDENTICAL eşiğiyle yetinilseydi, KÜÇÜK bir içerik değişikliği + numara
-kayması birlikte olduğunda (gerçek örnek: 2019 MADDE 9 → 2023 MADDE 8
-"Birim Sorumlulukları", HEM numara HEM metin değişti) yanlışlıkla "sadece
-numara kaymış" (RENUMBERED) sayılırdı. Gerçek ölçüm: bu madde çifti
-karakter benzerliği **0.67** — açıkça 0.995'in ÇOK altında, doğru şekilde
-MODIFIED'a düşer.
+**Neden `classify_content` madde_no'ya HİÇ bakmıyor (eski tasarımda
+bakıyordu):** "bu maddenin metni değişti mi" sorusunun cevabı, numarasının
+kayıp kaymadığından TAMAMEN bağımsız olmalı. Eski RENUMBERED eşiği (0.995,
+IDENTICAL'dan daha sıkı) tam da bu ayrımı YAPISAL bir sinyali İÇERİK
+sinyaliyle KARIŞTIRARAK yapmaya çalışıyordu; numara artık BAĞIMSIZ bir
+bayrak olduğu için bu ikinci eşik gereksizleşti ve kaldırıldı.
 
-**Gerçekten ölçülen benzerlik değerleri (2019 PDF vs 2023 PDF, tüm
-korpus):**
+**Gerçekten ölçülen benzerlik değerleri VE yapısal bayraklar (2019 PDF vs
+2023 PDF, tüm korpus):**
 
-| Madde | Tür | Karakter benzerliği |
-|---|---|---|
-| Amaç, Kapsam, Dayanak, Veri Sorumluluğu | IDENTICAL | 1.000 |
-| Tanımlar | MODIFIED | 0.841 |
-| Veri Paylaşımı | MODIFIED | 0.833 |
-| Veri Kalitesi ve Güvenliği | MODIFIED | 0.844 |
-| Birim Sorumlulukları (9→8) | MODIFIED | 0.670 |
-| Üst Yönetim Sorumluluğu, Yürürlükten Kaldırılan Mevzuat, Yürürlük, Yürütme | RENUMBERED | 1.000 |
+| Madde | İçerik durumu | Karakter benzerliği | numarasi_degisti | yeri_degisti |
+|---|---|---|---|---|
+| Amaç, Kapsam, Dayanak, Veri Sorumluluğu | IDENTICAL | 1.000 | Hayır | Hayır |
+| Tanımlar, Veri Paylaşımı, Veri Kalitesi ve Güvenliği | MODIFIED | 0.83-0.84 | Hayır | Hayır |
+| **Birim Sorumlulukları (9→8)** | **MODIFIED** | 0.670 | **Evet** | Hayır |
+| Üst Yönetim Sorumluluğu, Yürürlükten Kaldırılan Mevzuat, Yürürlük, Yürütme | IDENTICAL | 1.000 | Evet | Hayır |
 
-Bu tablo, 0.98/0.995 eşiklerinin bu korpusta HER durumu geniş bir marjla
-(en yakın sınır durumu bile ≥0.16 fark) doğru ayırdığını gösterir.
+**Birim Sorumlulukları satırı bu tablonun TAM konusudur:** içeriği açıkça
+değişti (benzerlik 0.670, MODIFIED eşiğinin ÇOK altında) VE numarası da
+değişti (9→8) — panelde artık İKİ AYRI istatistiğe (İçerik Durumu: Değişti
+VE Yapısal Değişiklikler: Numarası Değişti) katkıda bulunuyor, eskisi gibi
+sadece birine değil. Korpus genelinde `numarasi_degisti=True` olan madde
+sayısı bu yüzden **5**'tir (eski tasarımda "RENUMBERED" sayısı sadece
+**4** olarak görünüyordu — Birim Sorumlulukları'nın numara değişimi
+sayılmıyordu).
 
-> **Sınırlama:** MOVED dalı sadece SENTETİK testlerle doğrulandı —
-> `ground_truth.json`'da gerçek bir MOVED örneği yok.
+> **Sınırlama:** `is_moved` sadece SENTETİK testlerle doğrulandı —
+> `ground_truth.json`'da gerçek bir örneği yok.
 
 ## Adım 6-7 — Sunum: UI ve dışa aktarım
 
@@ -207,14 +217,17 @@ tekrarı yok):
   İÇİNE GÖMEN, Streamlit olmadan tarayıcıda doğrudan açılabilen tek dosya.
 
 **Yönetici Özeti** (bkz. Mimari İlke C / "Hukuki Yorum Yok"), TAMAMEN
-sayısal: toplam madde, ChangeType başına sayı+yüzde, "en çok değişiklik
-görülen bölüm" (saf sayım). Serbest metin/yorum İÇERMEZ.
+sayısal, İKİ AYRI başlık altında: "İçerik Durumu" (ChangeType başına
+sayı+yüzde) ve "Yapısal Değişiklikler" ("X maddede madde numarası
+değişikliği tespit edildi." gibi SABİT cümleler, bkz. Adım 5/Adım 9
+bölümü) — ayrıca "en çok değişiklik görülen bölüm" (saf sayım). Serbest
+metin/yorum İÇERMEZ.
 
 ## Doğrulama metodolojisi
 
 Her aşama, `data/samples/document_spec.py`'den üretilen `ground_truth.json`
 cevap anahtarına karşı OBJEKTİF olarak test edilir — hiçbir sonuç "gözle
-kontrol" ile onaylanmaz. `pytest -v` çalıştırıldığında 199 test, ingestion'dan
+kontrol" ile onaylanmaz. `pytest -v` çalıştırıldığında 229 test, ingestion'dan
 son dışa aktarıma kadar HER katmanı bu tek doğruluk kaynağına karşı doğrular.
 
 Ayrıca UI ve hata yönetimi, `streamlit.testing.v1.AppTest` ile GERÇEK dosya
@@ -223,7 +236,7 @@ desteklenmeyen uzantı) üzerinden uçtan uca test edilir; kritik akışlar
 ayrıca gerçek bir Chrome tarayıcısında görsel olarak da doğrulanmıştır.
 
 **Bu metodolojinin açıkça KABUL ETTİĞİ boşluklar** (bkz.
-ARCHITECTURE.md §7): MOVED sınıflandırması ve L2'nin pozitif (gerçekten
+ARCHITECTURE.md §7): "yeri değişti" bayrağı ve L2'nin pozitif (gerçekten
 gerekli) bir eşleşme örneği, mevcut test korpusunda TEMSİL EDİLMİYOR. Bu,
 aracın bu iki senaryoda YANLIŞ çalıştığı anlamına gelmez — sadece bu iki
 senaryonun HENÜZ gerçek veriyle doğrulanmadığı anlamına gelir.

@@ -38,10 +38,17 @@ class SummaryStats:
     toplam_karsilastirma: int
     eski_toplam_madde: int
     yeni_toplam_madde: int
-    sayilar: dict[ChangeType, int]
+    sayilar: dict[ChangeType, int]  # İÇERİK durumu -- bkz. ComparisonResult.counts()
     yuzdeler: dict[ChangeType, float]  # 0-100 arası, virgülden sonra 1 hane
-    # (bölüm adı, o bölümdeki IDENTICAL-olmayan madde sayısı) -- hiç
-    # değişiklik yoksa ya da hiçbir Section'ın bölüm bilgisi yoksa None.
+    # YAPISAL değişiklik sayıları -- {"RENUMBERED": n, "MOVED": n}. NEDEN
+    # `sayilar`dan AYRI: içerik durumundan BAĞIMSIZ bir boyuttur, aynı
+    # satır HEM bir içerik durumuna HEM bir yapısal bayrağa katkıda
+    # bulunabilir (bkz. ComparisonResult.structural_counts() NEDEN notu)
+    # -- bu yüzden `sayilar` ile TOPLANAMAZ.
+    yapisal_sayilar: dict[str, int]
+    # (bölüm adı, o bölümde GERÇEKTEN bir şey değişen -- içerik VEYA
+    # yapısal -- madde sayısı) -- hiç değişiklik yoksa ya da hiçbir
+    # Section'ın bölüm bilgisi yoksa None.
     en_cok_degisen_bolum: tuple[str, int] | None = field(default=None)
 
 
@@ -52,8 +59,15 @@ def _bolum_adi(section: Section) -> str:
 
 def _en_cok_degisen_bolum(result: ComparisonResult) -> tuple[str, int] | None:
     """
-    IDENTICAL OLMAYAN maddeleri bölüme göre sayar, en çok sayıya sahip
-    bölümü döndürür.
+    GERÇEKTEN bir şeyi değişen (içerik VEYA yapısal) maddeleri bölüme göre
+    sayar, en çok sayıya sahip bölümü döndürür.
+
+    NEDEN "değişiklik" burada change_type != IDENTICAL VEYA numarasi_degisti
+    VEYA yeri_degisti (SADECE change_type != IDENTICAL DEĞİL): içeriği
+    AYNI kalıp SADECE numarası/yeri değişen bir madde (bkz. classifier.py
+    NEDEN notu) de bu bölümde bir "olay"dır -- content_type'a göre
+    filtrelemek onu YOK SAYARDI, "bu bölümde hiçbir şey olmadı" yanlış
+    izlenimini verirdi.
 
     NEDEN eşitlikte belgedeki İLK GÖRÜLME SIRASI belirleyici: birden fazla
     bölüm AYNI sayıda değişikliğe sahipse, rastgele/dict-sıralamasına bağlı
@@ -63,9 +77,13 @@ def _en_cok_degisen_bolum(result: ComparisonResult) -> tuple[str, int] | None:
     sayac: dict[str, int] = {}
     ilk_gorulme: dict[str, int] = {}
     for sira, row in enumerate(result.rows):
-        if row.classified.change_type == ChangeType.IDENTICAL:
+        c = row.classified
+        hicbir_sey_degismedi = (
+            c.change_type == ChangeType.IDENTICAL and not c.numarasi_degisti and not c.yeri_degisti
+        )
+        if hicbir_sey_degismedi:
             continue
-        section = row.classified.old or row.classified.new
+        section = c.old or c.new
         bolum = _bolum_adi(section)
         if not bolum:
             continue
@@ -95,6 +113,7 @@ def build_summary_stats(result: ComparisonResult) -> SummaryStats:
         yeni_toplam_madde=yeni_toplam,
         sayilar=sayilar,
         yuzdeler=yuzdeler,
+        yapisal_sayilar=result.structural_counts(),
         en_cok_degisen_bolum=_en_cok_degisen_bolum(result),
     )
 
@@ -114,11 +133,27 @@ def render_summary_markdown(stats: SummaryStats) -> str:
         ),
         "",
     ]
+    lines.append("### İçerik Durumu")
     for change_type in ChangeType:
         count = stats.sayilar[change_type]
         pct = stats.yuzdeler[change_type]
         label = CHANGE_TYPE_LABELS_TR[change_type.value]
         lines.append(f"- **{label}**: {count} madde (%{pct})")
+
+    # NEDEN AYRI bir başlık altında: yapısal sayılar içerik durumundan
+    # BAĞIMSIZ bir boyuttur -- aynı madde HEM içerik durumu listesinde HEM
+    # burada görünebilir, bu NORMALDİR ve "toplam değişen madde" hesabına
+    # dahil edilmemelidir (bkz. modül NEDEN notu).
+    lines.append("")
+    lines.append("### Yapısal Değişiklikler")
+    lines.append(
+        f"- **{CHANGE_TYPE_LABELS_TR['RENUMBERED']}**: "
+        f"{stats.yapisal_sayilar['RENUMBERED']} maddede madde numarası değişikliği tespit edildi."
+    )
+    lines.append(
+        f"- **{CHANGE_TYPE_LABELS_TR['MOVED']}**: "
+        f"{stats.yapisal_sayilar['MOVED']} maddede yeri değişikliği tespit edildi."
+    )
 
     if stats.en_cok_degisen_bolum is not None:
         bolum, sayi = stats.en_cok_degisen_bolum

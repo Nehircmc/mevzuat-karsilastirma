@@ -98,16 +98,29 @@ madde/bölüm bazında renkli yan yana karşılaştırma otomatik oluşur.
       _neutralize_formula_prefix` ile düzeltildi. Diğer vektörler (path
       traversal, HTML/XSS, kod enjeksiyonu, sabit kodlanmış sır, bilinen
       CVE'li bağımlılık) kontrol edildi, sorun BULUNMADI (bkz.
-      `docs/ARCHITECTURE.md` §6 — tam tablo). 9 yeni test, **toplam 208
-      test geçiyor**.
+      `docs/ARCHITECTURE.md` §6 — tam tablo). 9 yeni test, toplam 208
+      test geçiyor.
+- [x] **Adım 9 — İçerik durumu / yapısal değişiklik ayrımı** (kullanıcı
+      geri bildirimi): `ChangeType` artık SADECE 4 değerli (`IDENTICAL,
+      MODIFIED, ADDED, REMOVED`) — `MOVED`/`RENUMBERED` `ClassifiedSection`
+      üzerinde İÇERİK durumundan BAĞIMSIZ iki bool bayrağa
+      (`numarasi_degisti`, `yeri_degisti`) taşındı. Eski tasarımda bir
+      madde HEM numarası HEM içeriği değiştiğinde (örn. "Birim
+      Sorumlulukları" 9→8) numara değişimi SESSİZCE KAYBOLUYORDU; artık
+      panelde "İçerik Durumu" ve "Yapısal Değişiklikler" AYRI iki başlık
+      altında gösteriliyor, aynı madde her ikisinde de görünebiliyor.
+      `src/analysis/classifier.py`, `src/reporting/*.py`, `src/ui/
+      components.py`, `app.py` güncellendi; filtre artık İÇERİK/YAPISAL
+      etiketlerini VEYA mantığıyla birleştiriyor. Gerçek tarayıcıda
+      doğrulandı. 21 yeni test, **toplam 229 test geçiyor**.
 
 ## Proje Durumu: TAMAMLANDI
 
-Adım 0-8'in tamamı bitti, ardından bir güvenlik taraması yapıldı. Mimari
-ilkeler, algoritma detayları, güvenlik bulguları ve gerçek kalibrasyon
-bulguları için `docs/` altındaki iki belgeye bakın. Bilinen sınırlamalar
-(gerçek MOVED/L2-pozitif örneği eksikliği) için bkz. `docs/ARCHITECTURE.md`
-§7.
+Adım 0-8'in tamamı bitti, ardından bir güvenlik taraması ve bir kullanıcı
+geri bildirimi (Adım 9) uygulandı. Mimari ilkeler, algoritma detayları,
+güvenlik bulguları ve gerçek kalibrasyon bulguları için `docs/` altındaki
+iki belgeye bakın. Bilinen sınırlamalar (gerçek "yeri değişti"/L2-pozitif
+örneği eksikliği) için bkz. `docs/ARCHITECTURE.md` §7.
 
 ### Genel notlar (proje boyunca biriken, hâlâ geçerli)
 

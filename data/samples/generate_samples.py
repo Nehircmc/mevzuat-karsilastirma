@@ -269,7 +269,7 @@ def _build_ground_truth() -> dict:
         maddeler.append(
             {
                 "id": article.id,
-                "change_type": article.change_type.value,
+                "change_type": article.change_type,
                 "baslik": article.baslik,
                 "madde_no_2019": article.madde_no_2019,
                 "madde_no_2023": article.madde_no_2023,

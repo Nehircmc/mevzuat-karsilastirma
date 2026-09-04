@@ -104,10 +104,11 @@ EK_PATTERN = re.compile(r"^\s*EK[- ]?(\d+)\b\s*(.*)$", re.IGNORECASE)
 
 # NEDEN: "Yürürlük" ve "Yürütme" maddeleri neredeyse her yönetmelikte son iki
 # madde olur ve numaraları yeni madde eklendiğinde KAYAR ama METİN DEĞİŞMEZ.
-# Bu, RENUMBERED sınıflandırmasının en sık karşılaşılan gerçek örneğidir --
-# classifier.py bu başlıkları özel olarak biliyor OLMAMALI (kapalı sözlük
-# ilkesi ihlali olur); bunun yerine metin+numara benzerliğiyle genel kural
-# çalışır. Bu sabit sadece test verisi üretiminde referans olarak kullanılır.
+# Bu, "numarası değişti" yapısal bayrağının (bkz. classifier.py::is_renumbered)
+# en sık karşılaşılan gerçek örneğidir -- classifier.py bu başlıkları özel
+# olarak biliyor OLMAMALI (kapalı sözlük ilkesi ihlali olur); bunun yerine
+# metin+numara benzerliğiyle genel kural çalışır. Bu sabit sadece test
+# verisi üretiminde referans olarak kullanılır.
 YURURLUK_YURUTME_BASLIKLARI = ["Yürürlük", "Yürütme"]
 
 # --------------------------------------------------------------------------
@@ -160,15 +161,11 @@ SECTION_MATCH_MIN_COSINE_SIMILARITY = 0.65
 IDENTICAL_COSINE_SIMILARITY_THRESHOLD = 0.995
 IDENTICAL_CHAR_SIMILARITY_THRESHOLD = 0.98  # difflib SequenceMatcher.ratio()
 
-# NEDEN: RENUMBERED, "numara değişti ama metin (neredeyse) birebir aynı"
-# durumunu yakalamak için IDENTICAL eşiğinden bile daha sıkı bir metin
-# benzerliği ister; aksi halde küçük içerik değişiklikleri yanlışlıkla
-# "sadece numara kaymış" sayılır.
-RENUMBERED_CHAR_SIMILARITY_THRESHOLD = 0.995
-
-# NEDEN: "Taşınmış" (MOVED) kararı içerik değil KONUM temellidir -- metin
-# birebir/aynı denecek kadar benzer ama belge içindeki sıra/heading_path
-# önemli ölçüde değişmişse MOVED'dır.
+# NEDEN "Taşınmış" (yeri değişti) sinyali İÇERİK BENZERLİĞİNDEN BAĞIMSIZ:
+# bir maddenin KISIM/BÖLÜM bağlamı ya da belge içindeki sırası, İÇERİĞİ
+# değişse de değişmese de kayabilir -- bu yüzden "yeri değişti" bir metin
+# benzerliği eşiği DEĞİL, saf bir KONUM sinyalidir (bkz.
+# src/analysis/classifier.py::is_moved).
 MOVED_MIN_POSITION_DELTA = 3  # sıra numarasındaki minimum kayma
 
 # --------------------------------------------------------------------------
@@ -176,6 +173,12 @@ MOVED_MIN_POSITION_DELTA = 3  # sıra numarasındaki minimum kayma
 # --------------------------------------------------------------------------
 # NEDEN: Renkler burada sabitlenir ki html_renderer.py ve styles.py aynı
 # paletten okusun; iki yerde renk tanımlanırsa tutarsızlık riski oluşur.
+#
+# NEDEN "MOVED"/"RENUMBERED" anahtarları hâlâ burada (ChangeType'ta ARTIK
+# YOK olsalar bile): bu ikisi artık İÇERİK durumu değil YAPISAL bayrak
+# (bkz. models.py::ChangeType NEDEN notu, classifier.py::ClassifiedSection)
+# ama rozet/renk ihtiyaçları AYNI -- bu sözlük anahtar olarak ChangeType.value
+# YERİNE düz string alır, bu yüzden yapısal bayraklar için de KULLANILABİLİR.
 COLOR_PALETTE = {
     "IDENTICAL": {"text": "#374151", "background": "#FFFFFF"},
     "MODIFIED": {"text": "#8A6D00", "background": "#FFF4CE"},
@@ -186,13 +189,15 @@ COLOR_PALETTE = {
 }
 
 # --------------------------------------------------------------------------
-# TÜRKÇE ChangeType ETİKETLERİ
+# TÜRKÇE ETİKETLER (ChangeType İÇERİK durumları + YAPISAL bayraklar)
 # --------------------------------------------------------------------------
 # NEDEN: models.py'deki ChangeType enum'u İngilizce sabit isimler taşır
 # (kod içi tutarlılık için); ama UI ve şablon tabanlı özet Türkçe olmalı.
 # Bu sözlük enum ADI (name) -> Türkçe etiket eşlemesidir; enum burada değil
 # models.py'de tanımlı çünkü config.py'nin models.py'ye bağımlı OLMAMASI
-# gerekir (dairesel bağımlılık riski).
+# gerekir (dairesel bağımlılık riski). "MOVED"/"RENUMBERED" anahtarları
+# COLOR_PALETTE'teki gerekçeyle AYNI nedenle burada duruyor -- YAPISAL
+# bayrakların rozet etiketi.
 CHANGE_TYPE_LABELS_TR = {
     "IDENTICAL": "Değişmedi",
     "MODIFIED": "Değişti",

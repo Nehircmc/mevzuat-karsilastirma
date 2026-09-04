@@ -85,11 +85,11 @@ else:
     components.render_download_buttons(result)
     st.divider()
 
-    selected_types = components.render_change_type_filter()
+    row_matches_filter = components.render_change_type_filter()
 
     st.divider()
 
-    visible_rows = [row for row in result.rows if row.classified.change_type in selected_types]
+    visible_rows = [row for row in result.rows if row_matches_filter(row)]
     if not visible_rows:
         st.warning("Seçili filtrelerle eşleşen madde yok.")
     for row in visible_rows:

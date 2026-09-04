@@ -13,6 +13,8 @@ bağımlı olması (ters yön) yerine ikisi de ORTAK analysis modülüne bağım
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from src.analysis.pipeline import ComparisonResult, ComparisonRow, compare_documents
 from src.config import CHANGE_TYPE_LABELS_TR
 from src.models import ChangeType
@@ -47,31 +49,84 @@ def render_upload_widgets() -> tuple[object | None, object | None]:
 
 
 def render_metric_cards(result: ComparisonResult) -> None:
-    """Her ChangeType için bir metrik kartı (sayım) render eder."""
+    """
+    İki AYRI grupta metrik kartları render eder: İÇERİK DURUMU (4 kart --
+    Değişmedi/Değişti/Yeni Eklendi/Kaldırıldı) ve YAPISAL DEĞİŞİKLİKLER (2
+    kart -- Numarası Değişti/Yeri Değişti).
+
+    NEDEN İKİ AYRI grup (TEK bir satırda 6 kart DEĞİL): bu iki boyut
+    BAĞIMSIZDIR -- aynı madde HEM bir içerik durumuna HEM bir yapısal
+    bayrağa katkıda bulunabilir (bkz. classifier.py NEDEN notu). Hepsini
+    TEK bir satırda göstermek, "6 kartın toplamı = toplam madde sayısı"
+    yanlış izlenimini verirdi; oysa içerik durumu TEK BAŞINA zaten toplam
+    madde sayısına eşittir (bkz. ComparisonResult.counts() NEDEN notu),
+    yapısal sayılar ise BUNA EK, bağımsız bir bilgidir.
+    """
     import streamlit as st
 
     counts = result.counts()
+    st.markdown("##### İçerik Durumu")
     cols = st.columns(len(ChangeType))
     for col, change_type in zip(cols, ChangeType):
         with col:
             st.metric(CHANGE_TYPE_LABELS_TR[change_type.value], counts[change_type])
 
+    structural = result.structural_counts()
+    st.markdown("##### Yapısal Değişiklikler")
+    cols2 = st.columns(2)
+    with cols2[0]:
+        st.metric(CHANGE_TYPE_LABELS_TR["RENUMBERED"], structural["RENUMBERED"])
+    with cols2[1]:
+        st.metric(CHANGE_TYPE_LABELS_TR["MOVED"], structural["MOVED"])
 
-def render_change_type_filter() -> list[ChangeType]:
-    """ChangeType'a göre çok seçmeli bir filtre çubuğu render eder; seçili türleri döndürür."""
+
+def render_change_type_filter() -> Callable[[ComparisonRow], bool]:
+    """
+    İÇERİK durumu (4) + YAPISAL bayrak (2) etiketlerini TEK bir çok seçmeli
+    filtrede sunar (görsel olarak Adım 7'deki filtreyle AYNI -- altı etiket,
+    hepsi varsayılan seçili); bir SATIRIN gösterilip gösterilmeyeceğine
+    karar veren bir YÜKLEM (predicate) fonksiyonu döndürür.
+
+    NEDEN bir liste DEĞİL bir yüklem döndürülüyor: içerik durumu ile
+    yapısal bayraklar BAĞIMSIZ boyutlar olduğu için bir satır AYNI ANDA
+    hem seçili bir içerik etiketine hem seçili bir yapısal etikete
+    uyabilir (VEYA mantığı) -- örn. "Değişti" VE "Numarası Değişti" ikisi
+    de seçiliyse, HEM içeriği HEM numarası değişen bir satır (bkz.
+    ground_truth.json/birim_sorumlulukları) gösterilmeli; bu iki AYRI
+    listeyi (`row.change_type in secili_icerikler`) satır satır VE/VEYA
+    ile birleştirmek app.py'ye TAŞINSAYDI orkestrasyon katmanına iş
+    mantığı sızardı (Mimari İlke D) -- bu yüzden karar burada, tek bir
+    fonksiyonda kapatılıyor.
+    """
     import streamlit as st
 
-    options = list(ChangeType)
-    label_by_type = {ct: CHANGE_TYPE_LABELS_TR[ct.value] for ct in options}
-    type_by_label = {label: ct for ct, label in label_by_type.items()}
+    content_options: list[tuple[ChangeType, str]] = [(ct, CHANGE_TYPE_LABELS_TR[ct.value]) for ct in ChangeType]
+    structural_options: list[tuple[str, str]] = [
+        ("RENUMBERED", CHANGE_TYPE_LABELS_TR["RENUMBERED"]),
+        ("MOVED", CHANGE_TYPE_LABELS_TR["MOVED"]),
+    ]
+    label_by_key: dict[ChangeType | str, str] = dict(content_options + structural_options)
+    key_by_label = {label: key for key, label in label_by_key.items()}
 
     selected_labels = st.multiselect(
         "Değişim türüne göre filtrele",
-        options=list(label_by_type.values()),
-        default=list(label_by_type.values()),
+        options=list(label_by_key.values()),
+        default=list(label_by_key.values()),
         key="mk_change_type_filter",
     )
-    return [type_by_label[label] for label in selected_labels]
+    selected_keys = {key_by_label[label] for label in selected_labels}
+
+    def matches_filter(row: ComparisonRow) -> bool:
+        c = row.classified
+        if c.change_type in selected_keys:
+            return True
+        if c.numarasi_degisti and "RENUMBERED" in selected_keys:
+            return True
+        if c.yeri_degisti and "MOVED" in selected_keys:
+            return True
+        return False
+
+    return matches_filter
 
 
 def render_side_by_side(row: ComparisonRow) -> None:
@@ -81,7 +136,12 @@ def render_side_by_side(row: ComparisonRow) -> None:
     from src.reporting.html_renderer import render_row_body_html, render_row_header_html
 
     c = row.classified
-    st.markdown(render_row_header_html(c.old, c.new, c.change_type), unsafe_allow_html=True)
+    header_html = render_row_header_html(
+        c.old, c.new, c.change_type,
+        numarasi_degisti=c.numarasi_degisti,
+        yeri_degisti=c.yeri_degisti,
+    )
+    st.markdown(header_html, unsafe_allow_html=True)
 
     old_html, new_html = render_row_body_html(c.old, c.new, c.change_type, row.section_diff)
 

@@ -12,19 +12,29 @@ from enum import Enum
 
 class ChangeType(str, Enum):
     """
-    Kapalı etiket sözlüğü (Mimari İlke C). Analiz katmanı bu kümenin
-    DIŞINDA bir değer üretemez -- "yorum yok" ilkesi tip sistemiyle
-    zorlanır, iyi niyetle değil. str'den türetilmesinin nedeni: pandas/
-    Excel/JSON dışa aktarımda enum'un doğrudan okunabilir string olarak
-    serileşmesini sağlamak (ekstra .value çağrısı gerektirmeden).
+    Kapalı etiket sözlüğü (Mimari İlke C) -- SADECE İÇERİK DURUMUNU
+    temsil eder. Analiz katmanı bu kümenin DIŞINDA bir değer üretemez --
+    "yorum yok" ilkesi tip sistemiyle zorlanır, iyi niyetle değil. str'den
+    türetilmesinin nedeni: pandas/Excel/JSON dışa aktarımda enum'un
+    doğrudan okunabilir string olarak serileşmesini sağlamak (ekstra
+    .value çağrısı gerektirmeden).
+
+    NEDEN "MOVED"/"RENUMBERED" BURADA YOK: bunlar İÇERİK durumu DEĞİL,
+    YAPISAL olgulardır (bir maddenin numarası/konumu, İÇERİĞİNDEN
+    BAĞIMSIZ olarak değişebilir) -- bkz.
+    src/analysis/classifier.py::ClassifiedSection.numarasi_degisti /
+    yeri_degisti. Eskiden bu ikisi de ChangeType üyesiydi ve İÇERİK DE
+    DEĞİŞMİŞSE (örn. hem numarası hem metni değişen bir madde) yapısal
+    olgu SESSİZCE KAYBOLUYORDU (satır sadece MODIFIED sayılıyordu) --
+    bu, "içerik durumu" ile "yapısal değişiklik" boyutlarının BİRBİRİNDEN
+    BAĞIMSIZ, aynı anda var olabilen iki farklı gerçek olduğunu tip
+    sisteminde YOK SAYIYORDU. Şimdi her satır İKİSİNİ de taşıyabiliyor.
     """
 
     IDENTICAL = "IDENTICAL"
     MODIFIED = "MODIFIED"
     ADDED = "ADDED"
     REMOVED = "REMOVED"
-    MOVED = "MOVED"
-    RENUMBERED = "RENUMBERED"
 
 
 @dataclass(frozen=True)

@@ -14,7 +14,7 @@ from io import BytesIO
 
 from src.analysis.pipeline import ComparisonResult
 from src.reporting.html_renderer import render_row_body_html, render_row_header_html, render_summary_html
-from src.reporting.metrics import build_detail_dataframe, build_summary_dataframe
+from src.reporting.metrics import build_detail_dataframe, build_structural_dataframe, build_summary_dataframe
 from src.reporting.summary_builder import build_summary_stats
 
 # NEDEN utf-8-sig (BOM'lu): Excel, BOM olmadan bir UTF-8 CSV'yi Türkçe
@@ -24,15 +24,22 @@ _CSV_ENCODING = "utf-8-sig"
 
 
 def export_to_excel(result: ComparisonResult) -> bytes:
-    """İki sayfalı bir Excel dosyası üretir: "Özet" (sayım+yüzde) ve "Detay" (madde madde)."""
+    """
+    ÜÇ sayfalı bir Excel dosyası üretir: "Özet" (İÇERİK durumu sayım+yüzde),
+    "Yapısal" (Numarası/Yeri Değişti sayımı -- İÇERİK durumundan BAĞIMSIZ,
+    bkz. build_structural_dataframe NEDEN notu) ve "Detay" (madde madde,
+    her iki boyutu da sütun olarak taşır).
+    """
     import pandas as pd
 
     summary_df = build_summary_dataframe(result)
+    structural_df = build_structural_dataframe(result)
     detail_df = build_detail_dataframe(result)
 
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         summary_df.to_excel(writer, sheet_name="Özet", index=False)
+        structural_df.to_excel(writer, sheet_name="Yapısal", index=False)
         detail_df.to_excel(writer, sheet_name="Detay", index=False)
     return buffer.getvalue()
 
@@ -63,7 +70,11 @@ def export_to_html(result: ComparisonResult) -> bytes:
     empty_marker = '<span class="mk-empty-side">(karşılığı yok)</span>'
     for row in result.rows:
         c = row.classified
-        header_html = render_row_header_html(c.old, c.new, c.change_type)
+        header_html = render_row_header_html(
+            c.old, c.new, c.change_type,
+            numarasi_degisti=c.numarasi_degisti,
+            yeri_degisti=c.yeri_degisti,
+        )
         old_html, new_html = render_row_body_html(c.old, c.new, c.change_type, row.section_diff)
         row_blocks.append(
             f'<div class="mk-row">{header_html}'

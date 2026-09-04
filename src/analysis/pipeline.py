@@ -1,6 +1,7 @@
 """
 Adım 6/7: TAM boru hattı orkestrasyonu -- ingestion -> structure_parser ->
-match_sections -> (her eşleşen çift için) classify_match + diff_section_match.
+match_sections -> (her eşleşen çift için) sınıflandırma (içerik durumu +
+yapısal bayraklar) + diff_section_match.
 
 NEDEN src/ui/components.py'de DEĞİL burada (analysis katmanında): hem
 src/ui/components.py (Streamlit widget'ları) hem src/reporting/*.py (Excel/
@@ -18,7 +19,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.analysis.classifier import ClassifiedSection, classify_match
+from src.analysis.classifier import ClassifiedSection, classify_content, is_moved, is_renumbered
 from src.analysis.differ import SectionDiff, diff_section_match
 from src.analysis.embedder import Embedder
 from src.analysis.section_matcher import match_sections
@@ -43,11 +44,33 @@ class ComparisonResult:
     rows: list[ComparisonRow]
 
     def counts(self) -> dict[ChangeType, int]:
-        """Her ChangeType için satır sayısı (kapalı kümenin TAMAMI, 0 dahil -- bkz. models.ChangeType)."""
+        """
+        İÇERİK DURUMU sayımı: her ChangeType için satır sayısı (kapalı
+        kümenin TAMAMI, 0 dahil -- bkz. models.ChangeType). Bu dört değer
+        HER satırı TAM OLARAK BİR kez sayar (birbirini dışlayan bir
+        bölüntüdür) -- bkz. structural_counts() için BUNUN TERSİ.
+        """
         counts = dict.fromkeys(ChangeType, 0)
         for row in self.rows:
             counts[row.classified.change_type] += 1
         return counts
+
+    def structural_counts(self) -> dict[str, int]:
+        """
+        YAPISAL DEĞİŞİKLİK sayımı: kaç satırda numarası/yeri değişti.
+
+        NEDEN counts()'tan AYRI ve NEDEN bu ikisi birbirini dışlamıyor:
+        "numarası değişti" ve "yeri değişti" içerik durumundan BAĞIMSIZ
+        olgulardır (bkz. classifier.py NEDEN notu) -- AYNI satır hem
+        counts()'ta bir İÇERİK durumuna (örn. MODIFIED) hem burada bir
+        veya iki YAPISAL bayrağa (RENUMBERED ve/veya MOVED) katkıda
+        bulunabilir. Bu yüzden counts() + structural_counts() toplamı
+        "toplam madde sayısı"nı VERMEZ -- ikisi FARKLI sorulara cevaptır.
+        """
+        return {
+            "RENUMBERED": sum(1 for row in self.rows if row.classified.numarasi_degisti),
+            "MOVED": sum(1 for row in self.rows if row.classified.yeri_degisti),
+        }
 
 
 def _load_document(file_bytes: bytes, filename: str, doc_id: str) -> Document:
@@ -92,10 +115,11 @@ def compare_documents(
 ) -> ComparisonResult:
     """
     TAM boru hattı: ingestion -> structure_parser -> match_sections ->
-    (her eşleşen çift için) classify_match + diff_section_match.
+    (her eşleşen çift için) classify_content/is_renumbered/is_moved +
+    diff_section_match.
 
-    NEDEN classify_all() (classifier.py) yerine classify_match() döngü
-    içinde çağrılıyor: diff_section_match() de AYNI SectionMatch nesnesine
+    NEDEN classify_all() (classifier.py) yerine bu üçü döngü içinde
+    çağrılıyor: diff_section_match() de AYNI SectionMatch nesnesine
     ihtiyaç duyar (bkz. differ.py) -- classify_all()'ın döndürdüğü
     ClassifiedSection bunu SAKLAMAZ (sadece old/new Section'ları taşır).
     Aynı eşleşme üzerinde iki AYRI geçiş yapıp sonra eşleştirmeye çalışmak
@@ -114,7 +138,13 @@ def compare_documents(
     for m in match_result.matches:
         rows.append(
             ComparisonRow(
-                classified=ClassifiedSection(change_type=classify_match(m), old=m.old, new=m.new),
+                classified=ClassifiedSection(
+                    change_type=classify_content(m),
+                    old=m.old,
+                    new=m.new,
+                    numarasi_degisti=is_renumbered(m),
+                    yeri_degisti=is_moved(m),
+                ),
                 section_diff=diff_section_match(m),
             )
         )

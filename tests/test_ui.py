@@ -28,11 +28,27 @@ _APP_PATH = BASE_DIR / "app.py"
 with open(SAMPLES_DIR / "ground_truth.json", encoding="utf-8") as f:
     _GROUND_TRUTH = json.load(f)
 
-_EXPECTED_COUNTS: dict[ChangeType, int] = {}
+# NEDEN ground_truth.json'daki eski (6 değerli) "change_type" alanı BURADA
+# İKİYE AYRIŞTIRILARAK yorumlanır (dosya DEĞİŞTİRİLMEDİ) -- bkz.
+# tests/test_differ.py + tests/test_reporting.py'deki AYNI gerekçe:
+# "RENUMBERED"/"MOVED" etiketi "içerik AYNI, sadece numara/yer FARKLI"
+# anlamına gelir. numarasi_degisti DOĞRUDAN madde_no_2019 != madde_no_2023
+# karşılaştırmasından türetilir (classifier.py::is_renumbered ile AYNI
+# mantık) -- SADECE "RENUMBERED" etiketli maddelere bakmak,
+# birim_sorumluluklari ("MODIFIED" etiketli ama numarası DA değişmiş) gibi
+# satırları KAÇIRIRDI.
+_EXPECTED_COUNTS: dict[ChangeType, int] = dict.fromkeys(ChangeType, 0)
+_EXPECTED_STRUCTURAL_COUNTS = {"RENUMBERED": 0, "MOVED": 0}
 for _m in _GROUND_TRUTH["maddeler"]:
-    _EXPECTED_COUNTS[ChangeType(_m["change_type"])] = (
-        _EXPECTED_COUNTS.get(ChangeType(_m["change_type"]), 0) + 1
+    _content_type = (
+        ChangeType.IDENTICAL
+        if _m["change_type"] in ("IDENTICAL", "RENUMBERED", "MOVED")
+        else ChangeType(_m["change_type"])
     )
+    _EXPECTED_COUNTS[_content_type] += 1
+    _no19, _no23 = _m["madde_no_2019"], _m["madde_no_2023"]
+    if _no19 is not None and _no23 is not None and _no19 != _no23:
+        _EXPECTED_STRUCTURAL_COUNTS["RENUMBERED"] += 1
 
 
 class TestStylesCSSUretimi:
@@ -177,16 +193,63 @@ class TestAppUctanUcaDumanTesti:
         metric_by_label = {m.label: int(m.value) for m in at.get("metric")}
         from src.config import CHANGE_TYPE_LABELS_TR
 
+        # NEDEN 4+2=6 metrik kartı bekleniyor: render_metric_cards İKİ AYRI
+        # grup render eder -- İÇERİK durumu (4) ve YAPISAL değişiklikler (2),
+        # bkz. components.py NEDEN notu.
         for change_type, expected in _EXPECTED_COUNTS.items():
             label = CHANGE_TYPE_LABELS_TR[change_type.value]
             assert metric_by_label[label] == expected, f"{label}: beklenen {expected}, bulunan {metric_by_label[label]}"
+        for key, expected in _EXPECTED_STRUCTURAL_COUNTS.items():
+            label = CHANGE_TYPE_LABELS_TR[key]
+            assert metric_by_label[label] == expected, f"{label}: beklenen {expected}, bulunan {metric_by_label[label]}"
+        assert len(metric_by_label) == 6
 
         assert at.get("multiselect")[0].key == "mk_change_type_filter"
         # NEDEN: filtre varsayılan olarak TÜM türleri seçili göstermeli --
         # aksi halde kullanıcı ilk açılışta bazı maddeleri SESSİZCE kaçırır.
+        # NEDEN altı seçenek: İÇERİK (4) + YAPISAL (2) etiketleri TEK bir
+        # filtrede birleştirilir (bkz. components.py::render_change_type_filter
+        # NEDEN notu) -- görsel olarak Adım 7'deki filtreyle AYNI sayıda
+        # seçenek, ama "Numarası/Yeri Değişti" artık İÇERİK durumundan
+        # BAĞIMSIZ bir VEYA koşulu olarak çalışır.
+        from src.config import CHANGE_TYPE_LABELS_TR
+
+        expected_labels = {CHANGE_TYPE_LABELS_TR[ct.value] for ct in ChangeType} | {
+            CHANGE_TYPE_LABELS_TR["RENUMBERED"],
+            CHANGE_TYPE_LABELS_TR["MOVED"],
+        }
+        assert set(at.multiselect(key="mk_change_type_filter").options) == expected_labels
         assert set(at.multiselect(key="mk_change_type_filter").value) == set(
             at.multiselect(key="mk_change_type_filter").options
         )
+
+    def test_filtre_numarasi_degisti_secilince_icerigi_ayni_kalan_ve_hem_icerigi_hem_numarasi_degisen_madde_birlikte_gorunur(
+        self,
+    ):
+        # NEDEN kritik: Adım 9'un TAM konusu -- "Numarası Değişti" filtresi
+        # SEÇİLDİĞİNDE hem SADECE numarası değişen maddeler (örn. Yürürlük)
+        # hem HEM İÇERİĞİ HEM NUMARASI değişen maddeler (Birim Sorumlulukları)
+        # görünmeli (VEYA mantığı, bkz. components.py NEDEN notu); hiçbir
+        # yapısal değişikliği olmayan bir madde (Amaç) GÖRÜNMEMELİ.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        from src.config import CHANGE_TYPE_LABELS_TR
+
+        at.multiselect(key="mk_change_type_filter").set_value([CHANGE_TYPE_LABELS_TR["RENUMBERED"]])
+        at.run(timeout=30)
+
+        assert not at.exception
+        visible_text = "\n".join(m.value for m in at.get("markdown"))
+        assert "Yürürlük" in visible_text
+        assert "Birim Sorumlulukları" in visible_text
+        assert "Amaç" not in visible_text
 
     def test_iki_belge_yuklendiginde_yonetici_ozeti_ve_indirme_dugmeleri_gorunur(self):
         # NEDEN (Adım 7): Yönetici Özeti paneli VE Excel/CSV/HTML indirme
@@ -205,6 +268,12 @@ class TestAppUctanUcaDumanTesti:
         assert not at.exception
         summary_markdown = "\n".join(m.value for m in at.get("markdown"))
         assert "Yönetici Özeti" in summary_markdown
+        assert "### İçerik Durumu" in summary_markdown
+        assert "### Yapısal Değişiklikler" in summary_markdown
+        assert (
+            f"{_EXPECTED_STRUCTURAL_COUNTS['RENUMBERED']} maddede madde numarası değişikliği tespit edildi."
+            in summary_markdown
+        )
         assert "ÜÇÜNCÜ BÖLÜM" in summary_markdown
 
         download_keys = {b.key for b in at.get("download_button")}
