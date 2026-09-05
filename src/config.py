@@ -182,16 +182,17 @@ SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY = 5
 # --------------------------------------------------------------------------
 # KAYNAK BAĞLANTISI ("Belgede görüntüle · Sayfa N")
 # --------------------------------------------------------------------------
-# NEDEN bir TOPLAM bayt BÜTÇESİ (tek dosyanın boyutu DEĞİL): bir PDF'i
-# tarayıcıda doğrudan ilgili sayfada açan data: URI, HER satırın kendi
-# bağlantısında AYNEN TEKRARLANIR (bkz. src/ui/components.py::
-# build_pdf_source_uri NEDEN notu) -- data: URI sunucuda YENİ bir erişim
-# yüzeyi açmadığı için (bkz. o fonksiyonun NEDEN notu) BİLİNÇLİ tercih
-# edilir, ama bunun bedeli HER satırda TEKRARLANMASIDIR. Tek başına küçük
-# bir PDF bile, YÜZLERCE madde içeren bir belgede sayfayı ŞİŞİRİR --
-# bütçe = dosya boyutu (bayt) × o taraftaki (eski/yeni) satır sayısı.
-# Bu bütçe AŞILDIĞINDA tıklanabilir bağlantı YERİNE düz "Sayfa N" metni
-# gösterilir (bkz. render_source_link) -- özellik ZORLA uygulanmaz.
+# NEDEN bir TOPLAM bayt BÜTÇESİ (tek dosyanın boyutu DEĞİL): bir PDF'in
+# base64 payload'ı (tarayıcıda `blob:` URL'e çevrilip ilgili sayfada
+# açılır, bkz. src/ui/components.py::build_pdf_source_payload NEDEN
+# notu), HER satırın kendi bağlantısında AYNEN TEKRARLANIR -- sunucuda
+# YENİ bir erişim yüzeyi açmadığı için (bkz. o fonksiyonun NEDEN notu)
+# BİLİNÇLİ tercih edilir, ama bunun bedeli HER satırda TEKRARLANMASIDIR.
+# Tek başına küçük bir PDF bile, YÜZLERCE madde içeren bir belgede
+# sayfayı ŞİŞİRİR -- bütçe = dosya boyutu (bayt) × o taraftaki (eski/
+# yeni) satır sayısı. Bu bütçe AŞILDIĞINDA tıklanabilir bağlantı YERİNE
+# düz "Sayfa N" metni gösterilir (bkz. render_source_link) -- özellik
+# ZORLA uygulanmaz.
 SOURCE_LINK_MAX_TOTAL_BYTES = 25 * 1024 * 1024  # 25 MB
 
 # --------------------------------------------------------------------------
@@ -223,12 +224,16 @@ COLOR_PALETTE = {
 # models.py'de tanımlı çünkü config.py'nin models.py'ye bağımlı OLMAMASI
 # gerekir (dairesel bağımlılık riski). "MOVED"/"RENUMBERED" anahtarları
 # COLOR_PALETTE'teki gerekçeyle AYNI nedenle burada duruyor -- YAPISAL
-# bayrakların rozet etiketi.
+# bayrakların rozet etiketi. NEDEN "MOVED" -> "Bölümü Değişti" (anahtar
+# adı hâlâ "MOVED"/is_moved, sadece GÖRÜNEN etiket): "Yeri Değişti"
+# kullanıcı testinde "Numarası Değişti" ile karıştırılıyordu -- "Bölümü
+# Değişti" bunun KISIM/BÖLÜM bağlamının (is_moved'ın asıl kontrol ettiği
+# şey, bkz. classifier.py::is_moved) değiştiğini daha AÇIK anlatıyor.
 CHANGE_TYPE_LABELS_TR = {
     "IDENTICAL": "Değişmedi",
     "MODIFIED": "Değişti",
     "ADDED": "Yeni Eklendi",
     "REMOVED": "Kaldırıldı",
-    "MOVED": "Yeri Değişti",
+    "MOVED": "Bölümü Değişti",
     "RENUMBERED": "Numarası Değişti",
 }

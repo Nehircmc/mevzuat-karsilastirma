@@ -21,7 +21,7 @@ from src.config import ASSETS_DIR, BASE_DIR, COLOR_PALETTE, SAMPLES_DIR, SOURCE_
 from src.ingestion.base import CorruptDocumentError
 from src.models import ChangeType, Section, TextUnit
 from src.ui import styles
-from src.ui.components import ComparisonResult, build_pdf_source_uri, compare_documents, render_source_link
+from src.ui.components import ComparisonResult, build_pdf_source_payload, compare_documents, render_source_link
 
 _APP_PATH = BASE_DIR / "app.py"
 
@@ -176,59 +176,82 @@ def _section_sayfa(sayfa_no: int | None, madde_no: int = 1) -> Section:
     )
 
 
-class TestBuildPdfSourceUri:
+class TestBuildPdfSourcePayload:
     """
-    build_pdf_source_uri -- "mümkünse" ilkesi (bkz. components.py NEDEN
-    notu): PDF DEĞİLSE, gerçek bir PDF DEĞİLSE ya da toplam bayt bütçesi
-    (dosya boyutu × satır sayısı) AŞILIRSA None döner, özellik ZORLA
-    uygulanmaz.
+    build_pdf_source_payload -- "mümkünse" ilkesi (bkz. components.py
+    NEDEN notu): PDF DEĞİLSE, gerçek bir PDF DEĞİLSE ya da toplam bayt
+    bütçesi (dosya boyutu × satır sayısı) AŞILIRSA None döner, özellik
+    ZORLA uygulanmaz.
     """
 
     _GERCEK_PDF_BYTES = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
 
-    def test_gecerli_pdf_data_uri_uretir(self):
-        uri = build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=1)
-        assert uri is not None
-        assert uri.startswith("data:application/pdf;base64,")
+    def test_gecerli_pdf_base64_payload_uretir(self):
+        import base64
+
+        payload = build_pdf_source_payload(self._GERCEK_PDF_BYTES, "pdf", link_count=1)
+        assert payload is not None
+        assert base64.b64decode(payload) == self._GERCEK_PDF_BYTES
 
     def test_docx_icin_none_doner(self):
         # NEDEN: DOCX akış tabanlıdır, PDF görüntüleme kavramı YOKTUR
         # (bkz. models.py::TextUnit NEDEN notu).
-        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "docx", link_count=1) is None
+        assert build_pdf_source_payload(self._GERCEK_PDF_BYTES, "docx", link_count=1) is None
 
     def test_gercek_pdf_olmayan_baytlar_icin_none_doner(self):
         # NEDEN: dosya adı ".pdf" ile bitse bile İÇERİK "%PDF" imzasıyla
         # BAŞLAMIYORSA (dosya adı uzantısına GÜVENMEYEN, savunma amaçlı
         # ikinci bir kontrol) None dönmeli.
-        assert build_pdf_source_uri(b"bu bir PDF degil", "pdf", link_count=1) is None
+        assert build_pdf_source_payload(b"bu bir PDF degil", "pdf", link_count=1) is None
 
     def test_link_count_sifirsa_none_doner(self):
-        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=0) is None
+        assert build_pdf_source_payload(self._GERCEK_PDF_BYTES, "pdf", link_count=0) is None
 
     def test_toplam_boyut_butceyi_asarsa_none_doner(self):
-        # NEDEN: data URI HER satırda TEKRARLANIR (bkz. config.py::
+        # NEDEN: base64 payload HER satırda TEKRARLANIR (bkz. config.py::
         # SOURCE_LINK_MAX_TOTAL_BYTES NEDEN notu) -- dosya boyutu × satır
         # sayısı bütçeyi aşınca özellik ZORLA uygulanmaz, None döner.
         link_count = SOURCE_LINK_MAX_TOTAL_BYTES // len(self._GERCEK_PDF_BYTES) + 1
-        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is None
+        assert build_pdf_source_payload(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is None
 
-    def test_butce_siniri_icindeyse_uri_uretilir(self):
+    def test_butce_siniri_icindeyse_payload_uretilir(self):
         link_count = max(1, SOURCE_LINK_MAX_TOTAL_BYTES // len(self._GERCEK_PDF_BYTES) - 1)
-        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is not None
+        assert build_pdf_source_payload(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is not None
 
 
 class TestRenderSourceLink:
-    def test_pdf_uri_varsa_tiklanabilir_baglanti_uretir(self):
-        section = _section_sayfa(8)
-        html = render_source_link(section, "data:application/pdf;base64,AAAA")
-        assert '<a class="mk-source-link"' in html
-        assert 'href="data:application/pdf;base64,AAAA#page=8"' in html
-        assert "Belgede görüntüle · Sayfa 8" in html
-        assert 'target="_blank"' in html and 'rel="noopener noreferrer"' in html
+    """
+    render_source_link -- bkz. components.py NEDEN notu: `data:` URI'lerin
+    AKSİNE, `blob:` URL'ler Chrome'un PDF görüntüleyicisinde `#page=N`
+    fragment'ını GÜVENİLİR uygular; bu yüzden payload bir `<script>`
+    İÇİNE gömülür ve döndürülen `(html, needs_iframe)` çiftindeki
+    `needs_iframe=True`, çağırana bu html'in `st.iframe` ile render
+    edilmesi (React'in `<script>`'i ÇALIŞTIRMADIĞI `st.markdown` ile
+    DEĞİL, bkz. NEDEN notu) gerektiğini söyler.
+    """
 
-    def test_pdf_uri_yoksa_duz_sayfa_metni_uretir(self):
+    def test_pdf_base64_varsa_tiklanabilir_baglanti_uretir(self):
         section = _section_sayfa(8)
-        html = render_source_link(section, None)
+        html, needs_iframe = render_source_link(section, "QUFBQQ==")
+        assert needs_iframe is True
+        assert "Belgede görüntüle · Sayfa 8" in html
+        # NEDEN bu JavaScript çağrıları BİRLİKTE ARANIYOR: `blob:` URL
+        # ÜÇ adımda oluşturulur -- base64 çöz (atob), Blob'a sar, ObjectURL
+        # üret -- HERHANGİ biri eksikse teknik ÇALIŞMAZ. addEventListener
+        # KULLANILIYOR (bir onclick ÖZNİTELİĞİ DEĞİL) çünkü bu html bir
+        # <script> içinde GERÇEKTEN ÇALIŞIYOR (bkz. NEDEN notu).
+        assert "<script>" in html
+        assert "addEventListener('click'" in html
+        assert "atob('QUFBQQ==')" in html
+        assert "new Blob(" in html
+        assert "URL.createObjectURL(blob)" in html
+        assert "#page=8'" in html
+        assert "window.open(" in html
+
+    def test_pdf_base64_yoksa_duz_sayfa_metni_uretir(self):
+        section = _section_sayfa(8)
+        html, needs_iframe = render_source_link(section, None)
+        assert needs_iframe is False
         assert html == '<span class="mk-source-page">Sayfa 8</span>'
         assert "<a" not in html
 
@@ -236,12 +259,12 @@ class TestRenderSourceLink:
         # NEDEN: DOCX'te page_no HER ZAMAN None'dır (bkz. models.py NEDEN
         # notu) -- olmayan bir sayfa bilgisi UYDURULMAMALI.
         section = _section_sayfa(None)
-        assert render_source_link(section, "data:application/pdf;base64,AAAA") == ""
+        assert render_source_link(section, "QUFBQQ==") == ("", False)
 
     def test_section_none_ise_bos_string(self):
         # NEDEN: REMOVED bir satırda new=None, ADDED bir satırda old=None --
         # olmayan taraf için hiçbir şey render EDİLMEMELİ.
-        assert render_source_link(None, "data:application/pdf;base64,AAAA") == ""
+        assert render_source_link(None, "QUFBQQ==") == ("", False)
 
 
 class TestAppUctanUcaDumanTesti:
@@ -437,17 +460,29 @@ class TestAppUctanUcaDumanTesti:
         at.run(timeout=60)
 
         assert not at.exception
-        visible_html = "\n".join(m.value for m in at.get("markdown"))
+        # NEDEN "iframe" widget'ları aranıyor (st.markdown DEĞİL): tıklanabilir
+        # bağlantı artık bir <script> ÇALIŞTIRAN bağımsız bir <iframe>'de
+        # render ediliyor (bkz. components.py::render_source_link NEDEN
+        # notu) -- st.markdown içindeki HTML React tarafından yeniden
+        # yorumlanır ve onclick/script ÇALIŞTIRMAZ.
+        iframe_srcdocs = [el.proto.srcdoc for el in at.get("iframe")]
+        assert iframe_srcdocs, "hiç iframe (kaynak bağlantısı) üretilmedi"
         # MADDE 1 (Amaç) her iki belgede de 1. sayfada (bkz. script çıktısı).
-        assert 'class="mk-source-link"' in visible_html
-        assert "Belgede görüntüle · Sayfa 1" in visible_html
-        assert 'href="data:application/pdf;base64,' in visible_html
-        assert '#page=1"' in visible_html
+        assert any("Belgede görüntüle · Sayfa 1" in s and "#page=1'" in s for s in iframe_srcdocs)
+        # NEDEN blob: tabanlı JavaScript'i ARANIYOR (href="data:..." DEĞİL):
+        # bkz. components.py::render_source_link NEDEN notu -- `data:`
+        # URI'ler Chrome'da #page=N'i güvenilir uygulamadığı için `blob:`
+        # tekniğine geçildi (tarayıcıda test edilerek doğrulandı).
+        assert all("URL.createObjectURL(blob)" in s for s in iframe_srcdocs)
 
-    def test_kaldirilan_maddede_sadece_eski_belge_baglantisi_gorunur(self):
-        # NEDEN: kullanıcının AÇIKÇA istediği kural -- REMOVED bir satırda
-        # (new=None) SADECE eski belge bağlantısı görünmeli. "Arşivleme
-        # Esasları" (eski MADDE 8) REMOVED'dır.
+    def test_iframe_sayisi_sadece_var_olan_taraflar_icin_uretilir(self):
+        # NEDEN kritik: kullanıcının AÇIKÇA istediği kural -- REMOVED bir
+        # satırda (new=None) SADECE eski, ADDED bir satırda (old=None)
+        # SADECE yeni belge bağlantısı görünmeli. Her satır İÇİN AYRI bir
+        # <iframe> üretildiğinden (bkz. render_side_by_side), toplam iframe
+        # sayısı old/new taraf DOLU olan satır sayılarının TOPLAMINA eşit
+        # olmalı -- 15+15=30 DEĞİL (bu, REMOVED/ADDED satırlarda KARŞILIĞI
+        # OLMAYAN tarafa da bağlantı üretildiği anlamına gelirdi).
         at = AppTest.from_file(str(_APP_PATH))
         at.run(timeout=30)
 
@@ -458,32 +493,17 @@ class TestAppUctanUcaDumanTesti:
         at.run(timeout=60)
 
         assert not at.exception
-        markdown_values = [m.value for m in at.get("markdown")]
-        # NEDEN "mk-section-header" sınıfıyla arıyoruz (SADECE başlık
-        # metniyle DEĞİL): Yönetici Özeti'nin "Öne Çıkan Değişiklikler"
-        # listesi de "Arşivleme Esasları" metnini İÇERİR (bkz. bir önceki
-        # testin NEDEN notu) -- bu, o widget'la YANLIŞ eşleşmeyi önler,
-        # sadece render_row_header_html'in ürettiği GERÇEK satır başlığını
-        # bulur.
-        header_index = next(
-            i for i, v in enumerate(markdown_values)
-            if "mk-section-header" in v and "Arşivleme Esasları" in v
-        )
-        # Satırın gövdesi/bağlantıları başlıktan HEMEN SONRA render edilir
-        # (bkz. app.py'nin satır döngüsü) -- bu satıra ait bağlantı
-        # sayısını, bir SONRAKİ satır başlığına kadar olan aralıkta sayarız.
-        next_header_index = next(
-            (i for i in range(header_index + 1, len(markdown_values)) if "mk-section-header" in markdown_values[i]),
-            len(markdown_values),
-        )
-        row_block = "\n".join(markdown_values[header_index:next_header_index])
-        assert row_block.count('class="mk-source-link"') == 1
+        # eski belgede 13, yeni belgede 14 madde var (bkz.
+        # TestSummaryBuilderStats::test_toplamlar_ground_truth_ile_esler) --
+        # REMOVED (1 madde) SADECE eski, ADDED (2 madde) SADECE yeni
+        # tarafta bağlantı üretir; 13+14=27, 15+15=30 DEĞİL.
+        assert len(at.get("iframe")) == 13 + 14
 
     def test_docx_karsilastirmasinda_kaynak_baglantisi_gorunmez(self):
         # NEDEN: DOCX akış tabanlıdır, sayfa/PDF görüntüleme kavramı YOKTUR
         # (bkz. models.py::TextUnit NEDEN notu) -- özellik "mümkünse"
         # ilkesiyle SESSİZCE devre dışı kalmalı, hatalı/uydurma bir sayfa
-        # bilgisi GÖSTERİLMEMELİ.
+        # bilgisi GÖSTERİLMEMELİ (ne iframe ne "Sayfa N" metni).
         at = AppTest.from_file(str(_APP_PATH))
         at.run(timeout=30)
 
@@ -498,13 +518,9 @@ class TestAppUctanUcaDumanTesti:
         at.run(timeout=60)
 
         assert not at.exception
-        # NEDEN sadece satır widget'ları (ilk widget HARİÇ): sayfanın en
-        # başına enjekte edilen CSS (bkz. styles.inject) da BİR markdown
-        # widget'ıdır ve ".mk-source-link {...}" SEÇİCİSİNİ (metin olarak)
-        # İÇERİR -- bu, class="..." ATTRIBUTE'ÜNÜN gerçekten HİÇBİR
-        # widget'ta üretilmediğini kontrol ederek önlenir.
+        assert len(at.get("iframe")) == 0
         visible_html = "\n".join(m.value for m in at.get("markdown"))
-        assert 'class="mk-source-link"' not in visible_html
+        assert 'class="mk-source-page"' not in visible_html
         assert 'class="mk-source-page"' not in visible_html
 
     def test_yukleme_alanlari_sadece_pdf_docx_kabul_eder(self):

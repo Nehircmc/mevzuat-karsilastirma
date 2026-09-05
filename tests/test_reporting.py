@@ -499,9 +499,9 @@ class TestSummaryBuilderOneCikanDegisiklikler:
             for kelime in yasakli_kelimeler:
                 assert kelime not in cumle.lower(), f"yasaklı kelime '{kelime}' şu cümlede bulundu: {cumle!r}"
 
-    def test_moved_sifirsa_yeri_degisti_cumlesi_yok(self):
+    def test_moved_sifirsa_bolumu_degisti_cumlesi_yok(self):
         stats = build_summary_stats(_RESULT)
-        assert not any("yeri değişti" in c for c in stats.one_cikan_degisiklikler)
+        assert not any("bölümü değişti" in c for c in stats.one_cikan_degisiklikler)
 
     def test_hicbir_degisiklik_yoksa_bos_liste(self):
         from src.analysis.classifier import ClassifiedSection
@@ -575,7 +575,7 @@ class TestSummaryBuilderMarkdown:
         stats = build_summary_stats(_RESULT)
         md = render_summary_markdown(stats)
         assert f"{_EXPECTED_STRUCTURAL_COUNTS['RENUMBERED']} maddede madde numarası değişikliği tespit edildi." in md
-        assert f"{_EXPECTED_STRUCTURAL_COUNTS['MOVED']} maddede yeri değişikliği tespit edildi." in md
+        assert f"{_EXPECTED_STRUCTURAL_COUNTS['MOVED']} maddede bölümü değişikliği tespit edildi." in md
 
     def test_sayilar_metinde_gecer(self):
         stats = build_summary_stats(_RESULT)
@@ -699,6 +699,19 @@ class TestExporterExcel:
         assert sheets["Özet"].shape == (len(ChangeType), 3)
         assert sheets["Yapısal"].shape == (2, 2)
         assert sheets["Detay"].shape[0] == _EXPECTED_TOTAL
+
+    def test_detay_sayfasi_ilk_ve_acilista_secili_sayfadir(self):
+        # NEDEN kritik: kullanıcı geri bildirimi -- "Excel indirince sadece
+        # oranlar gözüküyor" (bkz. exporter.py NEDEN notu). "Özet" SADECE
+        # sayı/yüzde içerir; asıl madde madde karşılaştırma "Detay"
+        # sekmesinde -- dosya açıldığında bu sekme hem SIRADA İLK hem
+        # AKTİF olmalı ki kullanıcı onu KAÇIRMASIN.
+        import openpyxl
+
+        xlsx_bytes = export_to_excel(_RESULT)
+        wb = openpyxl.load_workbook(BytesIO(xlsx_bytes))
+        assert wb.sheetnames[0] == "Detay"
+        assert wb.active.title == "Detay"
 
     def test_detay_sayfasi_sayimla_tutarli(self):
         xlsx_bytes = export_to_excel(_RESULT)

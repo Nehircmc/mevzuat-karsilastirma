@@ -39,14 +39,15 @@ bir palet değişikliği bu dosyadaki ESKİ bir kopyayla sessizce çelişebilird
     font-style: italic;
 }
 
-.mk-source-link,
+/* NEDEN .mk-source-link BURADA YOK: tıklanabilir kaynak bağlantısı
+artık BAĞIMSIZ bir <iframe> içinde (bkz. src/ui/components.py::
+render_source_link NEDEN notu) KENDİ satır-içi (inline) stiliyle
+render ediliyor -- bu dosya o iframe'in İÇİNE HİÇ enjekte edilmiyor,
+burada bir kural tanımlamak DEAD CODE olurdu. */
 .mk-source-page {
     display: inline-block;
     margin-top: 0.35rem;
     font-size: 0.8rem;
-}
-
-.mk-source-page {
     color: rgba(49, 51, 63, 0.6);
 }
 

@@ -257,7 +257,7 @@ def render_summary_html(stats: SummaryStats) -> str:
     )
     parts.append(
         f'<li><span class="mk-badge mk-badge-moved">{_escape(CHANGE_TYPE_LABELS_TR["MOVED"])}</span>: '
-        f'{stats.yapisal_sayilar["MOVED"]} maddede yeri değişikliği tespit edildi.</li>'
+        f'{stats.yapisal_sayilar["MOVED"]} maddede bölümü değişikliği tespit edildi.</li>'
     )
     parts.append("</ul>")
 

@@ -26,7 +26,7 @@ __all__ = [
     "render_upload_widgets",
     "render_metric_cards",
     "render_section_breakdown",
-    "build_pdf_source_uri",
+    "build_pdf_source_payload",
     "render_change_type_filter",
     "render_side_by_side",
     "render_executive_summary",
@@ -187,22 +187,32 @@ def render_change_type_filter() -> Callable[[ComparisonRow], bool]:
     return matches_filter
 
 
-def build_pdf_source_uri(file_bytes: bytes, file_type: str, *, link_count: int) -> str | None:
+def build_pdf_source_payload(file_bytes: bytes, file_type: str, *, link_count: int) -> str | None:
     """
-    Kullanıcının KENDİ yüklediği bir PDF'in baytlarını, tarayıcıda
-    doğrudan (yeni sekmede, `#page=N` ile ilgili sayfada) açılabilecek
-    bir `data:` URI'ye çevirir -- bkz. render_source_link (bu URI'nin her
-    satırda nasıl kullanıldığı).
+    Kullanıcının KENDİ yüklediği bir PDF'in baytlarını base64'e çevirir --
+    bkz. render_source_link (bu payload'ın tarayıcıda `blob:` URL'e
+    çevrilerek `#page=N` ile ilgili sayfada nasıl açıldığı).
 
-    NEDEN sunucu tarafında bir statik dosya/URL YERİNE `data:` URI:
-    Streamlit'in statik dosya sunumu (enableStaticServing) kimlik
-    doğrulaması YAPMAZ -- bir kullanıcının yüklediği (gizli olabilecek
-    bir mevzuat taslağı gibi) belgeyi bir URL üzerinden erişilebilir
-    kılmak, o URL'yi bilen/tahmin eden BAŞKA bir kullanıcıya SIZDIRIRDI.
-    `data:` URI ise SADECE bu tarayıcı sekmesinin kendi DOM'unda yaşar --
-    sunucuda YENİ bir erişim yüzeyi AÇILMAZ, hiçbir dosya diske YAZILMAZ;
-    tam olarak bu session'ın zaten bellekte tuttuğu baytlar, aynı
-    session'a geri sunulur.
+    NEDEN `blob:` URL (eskiden `data:` URI denendi, bkz. GEÇMİŞ NOT):
+    Chrome'un yerleşik PDF görüntüleyicisi `#page=N` sayfa fragment'ını
+    `data:application/pdf;base64,...` URI'leri için GÜVENİLİR biçimde
+    UYGULAMAZ (kullanıcı geri bildirimi: link açılıyor ama ilgili
+    sayfaya ULAŞILMIYOR) -- `blob:` URL'ler ise normal kaynak yükleme
+    hattından geçtiği için PDF görüntüleyici URL'nin fragment'ını DOĞRU
+    okur. `blob:` bir URL'in oluşturulması `URL.createObjectURL()`
+    çağrısı GEREKTİRİR -- bu SADECE JavaScript'te yapılabilir, bu yüzden
+    bu fonksiyon artık HAZIR bir URL değil, render_source_link'in
+    onclick JavaScript'ine gömdüğü HAM base64 payload'ı döndürür.
+
+    NEDEN sunucu tarafında bir statik dosya/URL YERİNE (base64 payload'ı
+    `blob:`'a client-side çevirmek YERİNE): Streamlit'in statik dosya
+    sunumu (enableStaticServing) kimlik doğrulaması YAPMAZ -- bir
+    kullanıcının yüklediği (gizli olabilecek bir mevzuat taslağı gibi)
+    belgeyi bir URL üzerinden erişilebilir kılmak, o URL'yi bilen/tahmin
+    eden BAŞKA bir kullanıcıya SIZDIRIRDI. Bu payload SADECE bu tarayıcı
+    sekmesinin kendi belleğinde yaşar -- sunucuda YENİ bir erişim yüzeyi
+    AÇILMAZ, hiçbir dosya diske YAZILMAZ; tam olarak bu session'ın zaten
+    bellekte tuttuğu baytlar, aynı session'a geri sunulur.
 
     None döner (çağıran taraf bu durumda SADECE düz "Sayfa N" metnini
     gösterir, ÖZELLİK ZORLA uygulanmaz -- bkz. render_source_link):
@@ -211,7 +221,7 @@ def build_pdf_source_uri(file_bytes: bytes, file_type: str, *, link_count: int) 
     - baytlar GERÇEKTEN bir PDF DEĞİLSE ("%PDF" imzasıyla BAŞLAMIYORSA --
       dosya adı UZANTISINA güvenmeyen, savunma amaçlı bir ikinci kontrol);
     - `len(file_bytes) * link_count`, SOURCE_LINK_MAX_TOTAL_BYTES'i
-      AŞIYORSA (bkz. config.py NEDEN notu -- bu URI HER satırda
+      AŞIYORSA (bkz. config.py NEDEN notu -- bu payload HER satırda
       TEKRARLANDIĞI için toplam boyut satır sayısıyla ÇARPILARAK büyür).
     """
     import base64
@@ -222,56 +232,105 @@ def build_pdf_source_uri(file_bytes: bytes, file_type: str, *, link_count: int) 
         return None
     if link_count <= 0 or len(file_bytes) * link_count > SOURCE_LINK_MAX_TOTAL_BYTES:
         return None
-    encoded = base64.b64encode(file_bytes).decode("ascii")
-    return f"data:application/pdf;base64,{encoded}"
+    return base64.b64encode(file_bytes).decode("ascii")
 
 
-def render_source_link(section: Section | None, pdf_uri: str | None) -> str:
+def render_source_link(section: Section | None, pdf_base64: str | None) -> tuple[str, bool]:
     """
     Bir Section'ın kaynak satırının HTML'ini üretir -- "mümkünse" ilkesi
-    (bkz. build_pdf_source_uri NEDEN notu) ÜÇ kademeli:
+    (bkz. build_pdf_source_payload NEDEN notu) ÜÇ kademeli. Döndürülen
+    `(html, needs_iframe)` çiftindeki `needs_iframe`, ÇAĞIRANA (bkz.
+    render_side_by_side) bu html'in `st.markdown` YERİNE `st.iframe` ile
+    render edilmesi GEREKTİĞİNİ söyler:
 
-    1. `pdf_uri` VARSA VE sayfa numarası biliniyorsa: tıklanabilir
-       "Belgede görüntüle · Sayfa N" bağlantısı (yeni sekmede, ilgili
-       sayfada açılır).
-    2. `pdf_uri` YOKSA (DOCX, PDF-olmayan bayt, veya boyut bütçesi
-       aşıldıysa) AMA sayfa numarası biliniyorsa: düz "Sayfa N" metni.
+    1. `pdf_base64` VARSA VE sayfa numarası biliniyorsa: `(html, True)` --
+       html KENDİ KENDİNE YETEN bir mini belgedir (tıklanabilir bağlantı
+       + `<script>`), SADECE bir `<iframe>` İÇİNDE (`st.iframe`) ÇALIŞIR
+       (bkz. aşağıdaki NEDEN notu).
+    2. `pdf_base64` YOKSA (DOCX, PDF-olmayan bayt, veya boyut bütçesi
+       aşıldıysa) AMA sayfa numarası biliniyorsa: `(html, False)` -- düz
+       "Sayfa N" metni, `st.markdown` ile render edilir.
     3. Sayfa numarası da BİLİNMİYORSA (DOCX'te her zaman, ya da PDF'te
-       provenance eksikse): boş string -- hiçbir şey render EDİLMEZ,
+       provenance eksikse): `("", False)` -- hiçbir şey render EDİLMEZ,
        olmayan bir bilgi UYDURULMAZ.
+
+    NEDEN `st.iframe` GEREKLİ (`st.markdown` YETMEZ -- TARAYICIDA TEST
+    EDİLEREK doğrulandı): Streamlit'in `st.markdown(unsafe_allow_
+    html=True)` çıktısı React TARAFINDAN YENİDEN YORUMLANIR -- bir
+    `onclick="..."` HTML özniteliği React'e STRING olarak ulaşır, React
+    ise bir olay işleyicisinin (`onClick`) bir FONKSİYON olmasını ZORUNLU
+    kılar ve string değer verildiğinde ÇALIŞMAZ, konsola "Minified React
+    error #231" basar (ilk denemede BÖYLE BAŞARISIZ OLDU -- link
+    açılıyordu ama tıklama HİÇ İŞLEMİYORDU). Aynı nedenle (React'in
+    HTML'i ayrıştırıp KENDİ ağacına çevirmesi) `<script>` etiketleri de
+    ÇALIŞMAZ. `st.iframe` İSE (ham bir HTML string verildiğinde) içeriği
+    BAĞIMSIZ bir `<iframe>`'e yazar -- React'İN HİÇ KARIŞMADIĞI,
+    tarayıcının HTML'i sıradan biçimde ayrıştırıp `<script>`'i GERÇEKTEN
+    ÇALIŞTIRDIĞI bir belgedir (eski `st.components.v1.html` de aynı işi
+    görürdü ama Streamlit bunu `st.iframe` lehine KULLANIMDAN
+    KALDIRDI).
+
+    NEDEN `blob:` URL (`data:` URI DEĞİL -- İLK sürüm `data:` kullanıyordu):
+    Chrome'un yerleşik PDF görüntüleyicisi `#page=N` sayfa fragment'ını
+    `data:application/pdf;base64,...` URI'leri için GÜVENİLİR biçimde
+    UYGULAMAZ (kullanıcı geri bildirimi: link açılıyor ama ilgili
+    sayfaya ULAŞILMIYOR) -- `blob:` URL'ler normal kaynak yükleme
+    hattından geçtiği için fragment'ı DOĞRU okur (TARAYICIDA TEST
+    EDİLEREK doğrulandı: açılan sekmenin URL'i `blob:...#page=N` olarak
+    GÖRÜLDÜ). `blob:` bir URL'in oluşturulması `URL.createObjectURL()`
+    GEREKTİRİR -- bu SADECE JavaScript'te yapılabilir, bu yüzden
+    GERÇEKTEN ÇALIŞAN bir `<script>`'e ihtiyaç vardır (yukarıdaki NEDEN
+    notu).
+
+    NEDEN base64 payload'ı DOĞRUDAN bir JS string literaline gömülüyor
+    (kaçırma/escape İHTİYACI OLMADAN): base64 alfabesi
+    (`A-Za-z0-9+/=`) `"`, `'`, `<`, `>` KARAKTERLERİNİ HİÇ İÇERMEZ.
 
     NEDEN Section'ın İLK unit'inin sayfa numarası: bir madde sayfa
     sınırında bölünmüşse (bkz. models.py::Section NEDEN notu) "kaynağa
     git" sorusunun doğal cevabı, maddenin BAŞLADIĞI sayfadır.
     """
     if section is None:
-        return ""
+        return "", False
     sayfa_no = next((u.page_no for u in section.units if u.page_no is not None), None)
     if sayfa_no is None:
-        return ""
-    if pdf_uri:
-        return (
-            f'<a class="mk-source-link" href="{pdf_uri}#page={sayfa_no}" '
-            f'target="_blank" rel="noopener noreferrer">Belgede görüntüle · Sayfa {sayfa_no}</a>'
+        return "", False
+    if pdf_base64:
+        html = (
+            "<div style=\"font-family:-apple-system,'Segoe UI',Roboto,Helvetica,"
+            "Arial,sans-serif;font-size:13px;\">"
+            f'<a href="#" id="mk-src-link" style="color:#4EA1FF;">'
+            f"Belgede görüntüle · Sayfa {sayfa_no}</a></div>"
+            '<script>document.getElementById("mk-src-link")'
+            ".addEventListener('click', function(e) {"
+            "e.preventDefault();"
+            f"var bin=atob('{pdf_base64}');"
+            "var arr=new Uint8Array(bin.length);"
+            "for(var i=0;i<bin.length;i++){arr[i]=bin.charCodeAt(i);}"
+            "var blob=new Blob([arr],{type:'application/pdf'});"
+            "var url=URL.createObjectURL(blob);"
+            f"window.open(url+'#page={sayfa_no}','_blank','noopener,noreferrer');"
+            "});</script>"
         )
-    return f'<span class="mk-source-page">Sayfa {sayfa_no}</span>'
+        return html, True
+    return f'<span class="mk-source-page">Sayfa {sayfa_no}</span>', False
 
 
 def render_side_by_side(
     row: ComparisonRow,
     *,
-    old_pdf_uri: str | None = None,
-    new_pdf_uri: str | None = None,
+    old_pdf_base64: str | None = None,
+    new_pdf_base64: str | None = None,
 ) -> None:
     """
     Tek bir ComparisonRow'u (başlık + rozet + yan yana renkli metin +
     varsa kaynak bağlantısı/sayfası) render eder.
 
-    NEDEN old_pdf_uri/new_pdf_uri PARAMETRE (her satırda YENİDEN
-    HESAPLANMIYOR): build_pdf_source_uri her çağrıldığında TÜM PDF'i
+    NEDEN old_pdf_base64/new_pdf_base64 PARAMETRE (her satırda YENİDEN
+    HESAPLANMIYOR): build_pdf_source_payload her çağrıldığında TÜM PDF'i
     base64'e çevirir -- bu, app.py'de SATIR BAŞINA DEĞİL, belge başına
-    BİR KEZ çağrılır, sonuç (aynı `data:` URI) TÜM satırlara PAYLAŞILARAK
-    geçirilir.
+    BİR KEZ çağrılır, sonuç (aynı base64 payload) TÜM satırlara
+    PAYLAŞILARAK geçirilir.
     """
     import streamlit as st
 
@@ -286,19 +345,25 @@ def render_side_by_side(
     st.markdown(header_html, unsafe_allow_html=True)
 
     old_html, new_html = render_row_body_html(c.old, c.new, c.change_type, row.section_diff)
-    old_source_html = render_source_link(c.old, old_pdf_uri)
-    new_source_html = render_source_link(c.new, new_pdf_uri)
+    old_source_html, old_needs_iframe = render_source_link(c.old, old_pdf_base64)
+    new_source_html, new_needs_iframe = render_source_link(c.new, new_pdf_base64)
 
     empty_marker = '<span class="mk-empty-side">(karşılığı yok)</span>'
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f'<div class="mk-column">{old_html or empty_marker}</div>', unsafe_allow_html=True)
         if old_source_html:
-            st.markdown(old_source_html, unsafe_allow_html=True)
+            if old_needs_iframe:
+                st.iframe(old_source_html, height=26)
+            else:
+                st.markdown(old_source_html, unsafe_allow_html=True)
     with col2:
         st.markdown(f'<div class="mk-column">{new_html or empty_marker}</div>', unsafe_allow_html=True)
         if new_source_html:
-            st.markdown(new_source_html, unsafe_allow_html=True)
+            if new_needs_iframe:
+                st.iframe(new_source_html, height=26)
+            else:
+                st.markdown(new_source_html, unsafe_allow_html=True)
 
 
 def render_executive_summary(result: ComparisonResult) -> None:

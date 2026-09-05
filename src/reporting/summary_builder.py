@@ -206,7 +206,7 @@ def _one_cikan_degisiklikler(result: ComparisonResult) -> list[str]:
         satirlar.append(f"{renumbered} maddenin numarası değişti.")
     moved = sum(1 for row in result.rows if row.classified.yeri_degisti)
     if moved > 0:
-        satirlar.append(f"{moved} maddenin yeri değişti.")
+        satirlar.append(f"{moved} maddenin bölümü değişti.")
 
     return satirlar
 
@@ -268,7 +268,7 @@ def render_summary_markdown(stats: SummaryStats) -> str:
     )
     lines.append(
         f"- **{CHANGE_TYPE_LABELS_TR['MOVED']}**: "
-        f"{stats.yapisal_sayilar['MOVED']} maddede yeri değişikliği tespit edildi."
+        f"{stats.yapisal_sayilar['MOVED']} maddede bölümü değişikliği tespit edildi."
     )
 
     if stats.en_cok_degisen_bolumler:

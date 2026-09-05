@@ -25,10 +25,22 @@ _CSV_ENCODING = "utf-8-sig"
 
 def export_to_excel(result: ComparisonResult) -> bytes:
     """
-    ÜÇ sayfalı bir Excel dosyası üretir: "Özet" (İÇERİK durumu sayım+yüzde),
-    "Yapısal" (Numarası/Yeri Değişti sayımı -- İÇERİK durumundan BAĞIMSIZ,
-    bkz. build_structural_dataframe NEDEN notu) ve "Detay" (madde madde,
-    her iki boyutu da sütun olarak taşır).
+    ÜÇ sayfalı bir Excel dosyası üretir: "Detay" (madde madde, her iki
+    boyutu -- İÇERİK durumu + YAPISAL bayraklar -- sütun olarak taşır),
+    "Özet" (İÇERİK durumu sayım+yüzde) ve "Yapısal" (Numarası/Yeri
+    Değişti sayımı -- İÇERİK durumundan BAĞIMSIZ, bkz.
+    build_structural_dataframe NEDEN notu).
+
+    NEDEN "Detay" İLK sayfa VE AÇILIŞTA SEÇİLİ (eskiden "Özet" ilkti,
+    kullanıcı geri bildirimi: "Excel indirince sadece oranlar
+    gözüküyor"): "Özet" SADECE üç sütun (Değişim Türü, Sayı, Yüzde)
+    içerir -- dosya açıldığında ilk (ve aktif) sekme bu olursa, kullanıcı
+    asıl aradığı madde madde karşılaştırmanın (Detay sekmesi) VAR
+    OLDUĞUNU fark etmeden dosyayı "sadece sayı/yüzde içeriyor" sanıp
+    kapatabilir. Sekme SIRASI ile AÇILIŞTA GÖRÜNEN sekme kasıtlı olarak
+    AYNI (Detay) yapılır -- biri diğerinden FARKLI olsaydı ("sekme
+    sırasında ilk Özet ama açılışta Detay seçili" gibi) bu da kafa
+    karıştırıcı olurdu.
     """
     import pandas as pd
 
@@ -38,9 +50,10 @@ def export_to_excel(result: ComparisonResult) -> bytes:
 
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        detail_df.to_excel(writer, sheet_name="Detay", index=False)
         summary_df.to_excel(writer, sheet_name="Özet", index=False)
         structural_df.to_excel(writer, sheet_name="Yapısal", index=False)
-        detail_df.to_excel(writer, sheet_name="Detay", index=False)
+        writer.book.active = writer.book.sheetnames.index("Detay")
     return buffer.getvalue()
 
 

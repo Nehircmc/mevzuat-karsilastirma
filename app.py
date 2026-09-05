@@ -96,19 +96,19 @@ else:
     if not visible_rows:
         st.warning("Seçili filtrelerle eşleşen madde yok.")
 
-    # NEDEN belge başına BİR KEZ (satır başına DEĞİL): build_pdf_source_uri
+    # NEDEN belge başına BİR KEZ (satır başına DEĞİL): build_pdf_source_payload
     # her çağrıldığında TÜM PDF'i base64'e çevirir -- aynı sonuç TÜM
     # satırlara PAYLAŞILARAK geçirilir (bkz. components.py::
     # render_side_by_side NEDEN notu).
     old_link_count = sum(1 for row in result.rows if row.classified.old is not None)
     new_link_count = sum(1 for row in result.rows if row.classified.new is not None)
-    old_pdf_uri = components.build_pdf_source_uri(
+    old_pdf_base64 = components.build_pdf_source_payload(
         old_file.getvalue(), result.old_meta.file_type, link_count=old_link_count
     )
-    new_pdf_uri = components.build_pdf_source_uri(
+    new_pdf_base64 = components.build_pdf_source_payload(
         new_file.getvalue(), result.new_meta.file_type, link_count=new_link_count
     )
 
     for row in visible_rows:
-        components.render_side_by_side(row, old_pdf_uri=old_pdf_uri, new_pdf_uri=new_pdf_uri)
+        components.render_side_by_side(row, old_pdf_base64=old_pdf_base64, new_pdf_base64=new_pdf_base64)
         st.divider()
