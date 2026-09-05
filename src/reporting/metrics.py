@@ -33,7 +33,7 @@ BOLUMSUZ_ETIKETI = "(Bölüm Bilgisi Yok)"
 _DETAIL_COLUMNS = [
     "Değişim Türü",
     "Numarası Değişti",
-    "Yeri Değişti",
+    CHANGE_TYPE_LABELS_TR["MOVED"],
     "Eski Madde No",
     "Yeni Madde No",
     "Başlık",
@@ -100,7 +100,7 @@ def build_summary_dataframe(result: ComparisonResult) -> pd.DataFrame:
 
 def build_structural_dataframe(result: ComparisonResult) -> pd.DataFrame:
     """
-    YAPISAL DEĞİŞİKLİKLER: Numarası Değişti / Yeri Değişti sayıları --
+    YAPISAL DEĞİŞİKLİKLER: Numarası Değişti / Bölümü Değişti sayıları --
     İÇERİK durumundan BAĞIMSIZ (bkz. ComparisonResult.structural_counts
     NEDEN notu), bu yüzden YÜZDE sütunu YOK -- iki satır birbirini
     dışlamadığı için "toplamın yüzdesi" kavramı burada anlamsızdır.
@@ -182,7 +182,7 @@ def build_detail_dataframe(result: ComparisonResult) -> pd.DataFrame:
             {
                 "Değişim Türü": CHANGE_TYPE_LABELS_TR[c.change_type.value],
                 "Numarası Değişti": "Evet" if c.numarasi_degisti else "Hayır",
-                "Yeri Değişti": "Evet" if c.yeri_degisti else "Hayır",
+                CHANGE_TYPE_LABELS_TR["MOVED"]: "Evet" if c.yeri_degisti else "Hayır",
                 "Eski Madde No": c.old.madde_no if c.old else None,
                 "Yeni Madde No": c.new.madde_no if c.new else None,
                 "Başlık": (c.old.baslik if c.old else c.new.baslik) or "",

@@ -54,7 +54,7 @@ def render_metric_cards(result: ComparisonResult) -> None:
     """
     İki AYRI grupta metrik kartları render eder: İÇERİK DURUMU (4 kart --
     Değişmedi/Değişti/Yeni Eklendi/Kaldırıldı) ve YAPISAL DEĞİŞİKLİKLER (2
-    kart -- Numarası Değişti/Yeri Değişti).
+    kart -- Numarası Değişti/Bölümü Değişti).
 
     NEDEN İKİ AYRI grup (TEK bir satırda 6 kart DEĞİL): bu iki boyut
     BAĞIMSIZDIR -- aynı madde HEM bir içerik durumuna HEM bir yapısal

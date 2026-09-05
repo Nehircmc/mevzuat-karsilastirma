@@ -63,7 +63,7 @@ _EXPECTED_TOTAL = len(_GROUND_TRUTH["maddeler"])
 _DETAIL_COLUMNS = [
     "Değişim Türü",
     "Numarası Değişti",
-    "Yeri Değişti",
+    CHANGE_TYPE_LABELS_TR["MOVED"],
     "Eski Madde No",
     "Yeni Madde No",
     "Başlık",
@@ -119,7 +119,7 @@ class TestMetricsSummaryDataFrame:
 class TestMetricsStructuralDataFrame:
     """
     build_structural_dataframe -- İÇERİK durumundan BAĞIMSIZ, "Numarası
-    Değişti"/"Yeri Değişti" sayımı (bkz. classifier.py NEDEN notu).
+    Değişti"/"Bölümü Değişti" sayımı (bkz. classifier.py NEDEN notu).
     """
 
     def test_iki_satir_dogru_kolonlar(self):
@@ -262,7 +262,7 @@ class TestMetricsDetailDataFrame:
         satir = df[df["Başlık"] == "Birim Sorumlulukları"].iloc[0]
         assert satir["Değişim Türü"] == CHANGE_TYPE_LABELS_TR["MODIFIED"]
         assert satir["Numarası Değişti"] == "Evet"
-        assert satir["Yeri Değişti"] == "Hayır"
+        assert satir[CHANGE_TYPE_LABELS_TR["MOVED"]] == "Hayır"
 
     def test_yururluk_satirinda_icerik_ayni_ama_numarasi_degisti_evet(self):
         df = build_detail_dataframe(_RESULT)
@@ -275,7 +275,7 @@ class TestMetricsDetailDataFrame:
         satir = df[df["Başlık"] == "Amaç"].iloc[0]
         assert satir["Değişim Türü"] == CHANGE_TYPE_LABELS_TR["IDENTICAL"]
         assert satir["Numarası Değişti"] == "Hayır"
-        assert satir["Yeri Değişti"] == "Hayır"
+        assert satir[CHANGE_TYPE_LABELS_TR["MOVED"]] == "Hayır"
 
     def test_bos_sonucta_bile_kolon_basliklari_korunur(self):
         from src.analysis.pipeline import ComparisonResult
@@ -692,7 +692,7 @@ class TestSummaryHtml:
 class TestExporterExcel:
     def test_uc_sayfa_uretir_dogru_boyutlarda(self):
         # NEDEN üç (iki DEĞİL): "Özet" (İÇERİK durumu) + "Yapısal" (Numarası/
-        # Yeri Değişti -- bkz. classifier.py NEDEN notu) + "Detay".
+        # Bölümü Değişti -- bkz. classifier.py NEDEN notu) + "Detay".
         xlsx_bytes = export_to_excel(_RESULT)
         sheets = pd.read_excel(BytesIO(xlsx_bytes), sheet_name=None)
         assert set(sheets.keys()) == {"Özet", "Yapısal", "Detay"}

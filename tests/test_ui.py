@@ -312,7 +312,7 @@ class TestAppUctanUcaDumanTesti:
         # NEDEN altı seçenek: İÇERİK (4) + YAPISAL (2) etiketleri TEK bir
         # filtrede birleştirilir (bkz. components.py::render_change_type_filter
         # NEDEN notu) -- görsel olarak Adım 7'deki filtreyle AYNI sayıda
-        # seçenek, ama "Numarası/Yeri Değişti" artık İÇERİK durumundan
+        # seçenek, ama "Numarası/Bölümü Değişti" artık İÇERİK durumundan
         # BAĞIMSIZ bir VEYA koşulu olarak çalışır.
         from src.config import CHANGE_TYPE_LABELS_TR
 
