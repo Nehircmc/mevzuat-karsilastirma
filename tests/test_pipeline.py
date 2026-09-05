@@ -1,0 +1,85 @@
+"""
+src/analysis/pipeline.py::compare_documents testleri -- özellikle
+classify_content() (İÇERİK durumu, kaba karakter/kelime benzerliği) ile
+diff_section_match() (ayrıntılı cümle/kelime düzeyi) arasındaki ETKİLEŞİMİ
+kapsayan, tek başlarına classifier.py/differ.py testleriyle YAKALANAMAYAN
+regresyonlar için.
+"""
+
+from __future__ import annotations
+
+from io import BytesIO
+
+import docx as docx_lib
+
+from src.analysis.pipeline import compare_documents
+from src.models import ChangeType
+
+
+def _build_docx_bytes(*, degistir: bool) -> bytes:
+    """
+    TEK bir çok uzun (~60 fıkralı) madde içeren minimal bir DOCX üretir --
+    `degistir=True` ise fıkra 30'daki TEK bir ifade değiştirilir, geri
+    kalan 59 fıkra AYNI kalır.
+    """
+    document = docx_lib.Document()
+    document.add_heading("BİRİNCİ BÖLÜM", level=1)
+    document.add_heading("Uzun Madde", level=2)
+
+    fikralar = []
+    for i in range(1, 61):
+        cumle = (
+            f"Kurum, {i} numaralı süreçte ilgili birimlerle koordinasyonu "
+            f"sürekli olarak sağlar ve yılda bir kez raporlar."
+        )
+        if degistir and i == 30:
+            cumle = cumle.replace("sürekli olarak", "yılda en az bir kez")
+        fikralar.append(f"({i}) {cumle}")
+
+    document.add_paragraph(f"MADDE 1- {chr(10).join(fikralar)}")
+
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+class TestClassifyContentDiffTutarliligi:
+    """
+    Kalite kontrolünde bulunan YANLIŞ NEGATİF regresyonu: classify_content()
+    TÜM madde metninin kaba benzerlik ORANINA bakar -- çok uzun bir maddede
+    (örn. 60 fıkra) TEK bir cümlelik gerçek bir değişiklik, bu oranı İHMAL
+    EDİLEBİLİR ölçüde etkiler ve eşiğin (IDENTICAL_CHAR_SIMILARITY_THRESHOLD)
+    ÜSTÜNDE kalabilir -- madde GERÇEKTEN değişmiş olsa bile rozet "Değişmedi"
+    derdi (section_diff aynı satırda bir "replace" cümlesi TAŞIDIĞI hâlde).
+    compare_documents() artık bu iki sinyali BİRBİRİNE karşı doğruluyor
+    (bkz. pipeline.py NEDEN notu).
+    """
+
+    def test_uzun_maddede_gomulu_tek_degisiklik_modified_olarak_isaretlenir(self):
+        old_bytes = _build_docx_bytes(degistir=False)
+        new_bytes = _build_docx_bytes(degistir=True)
+
+        result = compare_documents(old_bytes, "uzun_eski.docx", new_bytes, "uzun_yeni.docx")
+
+        assert len(result.rows) == 1
+        row = result.rows[0]
+        assert row.classified.change_type == ChangeType.MODIFIED
+        # NEDEN section_diff'te TAM OLARAK bir "replace" bekleniyor: differ.py
+        # ZATEN doğru çalışıyordu (bu regresyon SADECE classify_content'in
+        # rozet kararındaydı) -- burada TEKRAR doğrulanıyor ki iki sinyal
+        # ARTIK tutarlı: rozet MODIFIED derken diff de GERÇEKTEN tam olarak
+        # bir fark buluyor (ne fazla ne eksik).
+        replace_ops = [sd for sd in row.section_diff.sentence_diffs if sd.op == "replace"]
+        assert len(replace_ops) == 1
+
+    def test_hicbir_degisiklik_olmayan_uzun_madde_hala_identical(self):
+        # NEDEN kritik: bu doğrulama YÖNÜ tek taraflı olmalı -- düzeltme
+        # SADECE gerçekten farklı olan maddeleri MODIFIED'a çevirmeli,
+        # gerçekten AYNI kalan uzun bir maddeyi YANLIŞLIKLA MODIFIED'a
+        # ÇEVİRMEMELİ (bkz. pipeline.py NEDEN notu -- tek yönlü güvenlik ağı).
+        same_bytes = _build_docx_bytes(degistir=False)
+
+        result = compare_documents(same_bytes, "eski.docx", same_bytes, "yeni.docx")
+
+        assert len(result.rows) == 1
+        assert result.rows[0].classified.change_type == ChangeType.IDENTICAL

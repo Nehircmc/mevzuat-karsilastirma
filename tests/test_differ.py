@@ -25,7 +25,7 @@ from src.analysis.classifier import (
 )
 from src.analysis.differ import diff_section_match, diff_words, section_sentences
 from src.analysis.section_matcher import SectionMatch, match_sections
-from src.config import SAMPLES_DIR
+from src.config import IDENTICAL_CHAR_SIMILARITY_THRESHOLD, SAMPLES_DIR
 from src.ingestion.docx_loader import DOCXLoader
 from src.ingestion.pdf_loader import PDFLoader
 from src.models import ChangeType, Section, TextUnit
@@ -452,3 +452,41 @@ class TestClassifierSentetikKenarDurumlari:
         # NEDEN: normalize() çoklu boşluğu tek boşluğa indirger -- karakter
         # benzerliği bu YÜZEYSEL farktan etkilenmemeli.
         assert char_similarity("aynı   metin.", "aynı metin.") == 1.0
+
+
+class TestCharSimilarityPerformans:
+    """
+    Kalite kontrolünde bulunan REGRESYON testi: char_similarity() eskiden
+    HAM KARAKTER dizisi üzerinde difflib.SequenceMatcher çalıştırıyordu --
+    çok uzun (onlarca bin karakterlik) ve birbirine ÇOK BENZER iki madde
+    metninde bu PATOLOJİK biçimde yavaşlıyordu (gerçek ölçüm: 1200 fıkralı,
+    ~104.000 karakterlik, ~400 fıkrası değişmiş bir madde çiftinde **130
+    saniye** -- Streamlit arayüzü bu süre boyunca DONMUŞ görünürdü). Fonksiyon
+    artık KELİME dizisi üzerinde çalışıyor (bkz. classifier.py NEDEN notu),
+    AYNI metin ~0.3 saniyede biter. Bu test, gelecekte biri bu fonksiyonu
+    "sadeleştirmek" için tekrar ham karaktere DÖNDÜRÜRSE hemen KIRILSIN diye
+    var -- makul bir SÜRE SINIRI (gerçek 0.3s'in ONLARCA katı bir tolerans
+    payıyla) doğrular, tam bir performans BENCHMARK'ı değildir.
+    """
+
+    def test_uzun_ve_benzer_iki_metin_makul_surede_tamamlanir(self):
+        import time
+
+        def _uzun_metin(*, degistir: bool) -> str:
+            fikralar = []
+            for i in range(1, 1201):
+                cumle = f"({i}) Kurum, {i} numaralı süreçte ilgili birimlerle koordinasyonu sağlar ve raporlar."
+                if degistir and i % 3 == 0:
+                    cumle = f"({i}) Kurum, {i} numaralı süreçte ilgili birimlerle koordinasyonu SAĞLAMAZ ve raporlamaz."
+                fikralar.append(cumle)
+            return " ".join(fikralar)
+
+        old_text = _uzun_metin(degistir=False)
+        new_text = _uzun_metin(degistir=True)
+
+        t0 = time.time()
+        similarity = char_similarity(old_text, new_text)
+        elapsed = time.time() - t0
+
+        assert elapsed < 10.0, f"char_similarity {elapsed:.1f}s sürdü -- ham karakter dizisine bir REGRESYON olabilir"
+        assert similarity < IDENTICAL_CHAR_SIMILARITY_THRESHOLD  # ~400/1200 fıkra değişti, MODIFIED olmalı

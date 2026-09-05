@@ -136,16 +136,40 @@ def compare_documents(
 
     rows: list[ComparisonRow] = []
     for m in match_result.matches:
+        section_diff = diff_section_match(m)
+        change_type = classify_content(m)
+        # NEDEN classify_content()'in IDENTICAL kararı BURADA section_diff'e
+        # KARŞI doğrulanıyor (kalite kontrolünde bulundu): classify_content
+        # TÜM madde metninin karakter benzerlik ORANINA (bkz.
+        # IDENTICAL_CHAR_SIMILARITY_THRESHOLD) bakar -- ÇOK UZUN bir maddede
+        # (örn. onlarca fıkra) TEK bir cümlelik gerçek bir değişiklik, oran
+        # üzerinde İHMAL EDİLEBİLİR bir etki yaratır (örn. 13.790 karakterlik
+        # bir maddede 1 cümlelik değişiklik oranı %99,88'de bırakır -- eşiğin
+        # ÜSTÜNDE). Sonuç: rozet "Değişmedi" derken section_diff aynı satırda
+        # gerçek bir "replace" cümlesi TAŞIYABİLİRDİ -- kullanıcıya YANLIŞ
+        # NEGATİF bir izlenim verirdi. section_diff'in cümle hizalaması
+        # normalize edilmiş metne dayandığından (bkz. differ.py::_normalized_
+        # key) whitespace/noktalama GÜRÜLTÜSÜNÜ zaten doğru yok sayar; bu
+        # yüzden burada bulunan HERHANGİ bir "equal" DIŞI opcode, uzunluktan
+        # BAĞIMSIZ, GERÇEK bir içerik farkına işaret eder. NEDEN SADECE
+        # IDENTICAL -> MODIFIED yönünde (tersi DEĞİL): mevcut char-similarity
+        # eşiği gerçek verilerle KALİBRE EDİLMİŞTİR (bkz. docs/METHODOLOGY.md)
+        # -- bu düzeltme onu DEĞİŞTİRMEZ, sadece TEK YÖNLÜ bir güvenlik ağı
+        # ekler; zaten MODIFIED olan bir satırı asla IDENTICAL'a ÇEVİRMEZ.
+        if change_type == ChangeType.IDENTICAL and any(
+            sd.op != "equal" for sd in section_diff.sentence_diffs
+        ):
+            change_type = ChangeType.MODIFIED
         rows.append(
             ComparisonRow(
                 classified=ClassifiedSection(
-                    change_type=classify_content(m),
+                    change_type=change_type,
                     old=m.old,
                     new=m.new,
                     numarasi_degisti=is_renumbered(m),
                     yeri_degisti=is_moved(m),
                 ),
-                section_diff=diff_section_match(m),
+                section_diff=section_diff,
             )
         )
     for s in match_result.unmatched_old:
