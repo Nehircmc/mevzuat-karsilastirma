@@ -79,19 +79,36 @@ else:
         st.stop()
 
     components.render_metric_cards(result)
+    row_matches_bolum_filter = components.render_section_breakdown(result)
     components.render_executive_summary(result)
 
     st.divider()
     components.render_download_buttons(result)
     st.divider()
 
-    row_matches_filter = components.render_change_type_filter()
+    row_matches_type_filter = components.render_change_type_filter()
 
     st.divider()
 
-    visible_rows = [row for row in result.rows if row_matches_filter(row)]
+    visible_rows = [
+        row for row in result.rows if row_matches_type_filter(row) and row_matches_bolum_filter(row)
+    ]
     if not visible_rows:
         st.warning("Seçili filtrelerle eşleşen madde yok.")
+
+    # NEDEN belge başına BİR KEZ (satır başına DEĞİL): build_pdf_source_uri
+    # her çağrıldığında TÜM PDF'i base64'e çevirir -- aynı sonuç TÜM
+    # satırlara PAYLAŞILARAK geçirilir (bkz. components.py::
+    # render_side_by_side NEDEN notu).
+    old_link_count = sum(1 for row in result.rows if row.classified.old is not None)
+    new_link_count = sum(1 for row in result.rows if row.classified.new is not None)
+    old_pdf_uri = components.build_pdf_source_uri(
+        old_file.getvalue(), result.old_meta.file_type, link_count=old_link_count
+    )
+    new_pdf_uri = components.build_pdf_source_uri(
+        new_file.getvalue(), result.new_meta.file_type, link_count=new_link_count
+    )
+
     for row in visible_rows:
-        components.render_side_by_side(row)
+        components.render_side_by_side(row, old_pdf_uri=old_pdf_uri, new_pdf_uri=new_pdf_uri)
         st.divider()

@@ -180,6 +180,21 @@ MOVED_MIN_POSITION_DELTA = 3  # sıra numarasındaki minimum kayma
 SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY = 5
 
 # --------------------------------------------------------------------------
+# KAYNAK BAĞLANTISI ("Belgede görüntüle · Sayfa N")
+# --------------------------------------------------------------------------
+# NEDEN bir TOPLAM bayt BÜTÇESİ (tek dosyanın boyutu DEĞİL): bir PDF'i
+# tarayıcıda doğrudan ilgili sayfada açan data: URI, HER satırın kendi
+# bağlantısında AYNEN TEKRARLANIR (bkz. src/ui/components.py::
+# build_pdf_source_uri NEDEN notu) -- data: URI sunucuda YENİ bir erişim
+# yüzeyi açmadığı için (bkz. o fonksiyonun NEDEN notu) BİLİNÇLİ tercih
+# edilir, ama bunun bedeli HER satırda TEKRARLANMASIDIR. Tek başına küçük
+# bir PDF bile, YÜZLERCE madde içeren bir belgede sayfayı ŞİŞİRİR --
+# bütçe = dosya boyutu (bayt) × o taraftaki (eski/yeni) satır sayısı.
+# Bu bütçe AŞILDIĞINDA tıklanabilir bağlantı YERİNE düz "Sayfa N" metni
+# gösterilir (bkz. render_source_link) -- özellik ZORLA uygulanmaz.
+SOURCE_LINK_MAX_TOTAL_BYTES = 25 * 1024 * 1024  # 25 MB
+
+# --------------------------------------------------------------------------
 # DIFF RENK PALETİ (HTML side-by-side görünüm için)
 # --------------------------------------------------------------------------
 # NEDEN: Renkler burada sabitlenir ki html_renderer.py ve styles.py aynı

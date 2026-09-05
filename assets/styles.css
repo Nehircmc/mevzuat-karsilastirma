@@ -39,6 +39,17 @@ bir palet değişikliği bu dosyadaki ESKİ bir kopyayla sessizce çelişebilird
     font-style: italic;
 }
 
+.mk-source-link,
+.mk-source-page {
+    display: inline-block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+}
+
+.mk-source-page {
+    color: rgba(49, 51, 63, 0.6);
+}
+
 /*
 Adım 7: aşağıdaki kurallar SADECE bağımsız HTML dışa aktarımında (bkz.
 src/reporting/exporter.py) kullanılır -- Streamlit sayfasının kendi DOM'unda

@@ -17,10 +17,19 @@ import pandas as pd
 
 from src.analysis.pipeline import ComparisonResult
 from src.config import CHANGE_TYPE_LABELS_TR
-from src.models import ChangeType
+from src.models import ChangeType, Section
 
 _SUMMARY_COLUMNS = ["Değişim Türü", "Sayı", "Yüzde"]
 _STRUCTURAL_COLUMNS = ["Yapısal Değişiklik", "Sayı"]
+_SECTION_BREAKDOWN_COLUMNS = ["Bölüm"] + [CHANGE_TYPE_LABELS_TR[ct.value] for ct in ChangeType]
+# NEDEN ayrı bir sabit (özel karakter/boşluk İÇERMEYEN): heading_path'i
+# olmayan (KISIM/BÖLÜM tespit edilemeyen) bir Section'ı SESSİZCE tablodan
+# DÜŞÜRMEK yerine ayrı bir kovaya toplar -- aksi halde bölüm başına
+# sayılan toplam, result.counts() toplamından daha AZ çıkar ve bu fark
+# nereye gittiği belirsiz kalırdı (bkz. build_section_breakdown NEDEN
+# notu). components.py bu SABİTİ, seçilen bölüme göre filtrelerken AYNI
+# etiketi kullanmak için İÇE AKTARIR (public, alt çizgisiz).
+BOLUMSUZ_ETIKETI = "(Bölüm Bilgisi Yok)"
 _DETAIL_COLUMNS = [
     "Değişim Türü",
     "Numarası Değişti",
@@ -102,6 +111,58 @@ def build_structural_dataframe(result: ComparisonResult) -> pd.DataFrame:
         {"Yapısal Değişiklik": CHANGE_TYPE_LABELS_TR["MOVED"], "Sayı": structural["MOVED"]},
     ]
     return pd.DataFrame(rows, columns=_STRUCTURAL_COLUMNS)
+
+
+def _bolum_adi(section: Section) -> str:
+    """heading_path'in SON elemanı (MADDE N/GEÇİCİ MADDE N) HARİÇ, KISIM/BÖLÜM zinciri."""
+    return " > ".join(section.heading_path[:-1])
+
+
+def build_section_breakdown(result: ComparisonResult) -> pd.DataFrame:
+    """
+    Her KISIM/BÖLÜM için İÇERİK DURUMU sayımı (Değişmedi/Değişti/Yeni
+    Eklendi/Kaldırıldı) -- kullanıcının "hangi bölümde daha fazla
+    değişiklik var" sorusuna, madde madde değil BÖLÜM düzeyinde cevap
+    verir.
+
+    NEDEN YAPISAL bayraklar (numarasi_degisti/yeri_degisti) BU TABLODA
+    YOK: build_summary_dataframe/build_structural_dataframe'deki AYNI
+    gerekçeyle (bkz. o modülün NEDEN notu) -- içerik durumu ile yapısal
+    bayraklar BAĞIMSIZ boyutlardır, TEK bir tabloda karıştırılırsa
+    "toplam" satırı yanıltıcı olur. Bölüm bazında "en çok değişen bölüm"
+    HANGİSİ sorusunun cevabı (içerik+yapısal birleşik) hâlâ
+    SummaryStats.en_cok_degisen_bolumler'dadır (bkz. summary_builder.py)
+    -- burası SADECE içerik durumu dökümüdür.
+
+    NEDEN heading_path'i olmayan Section'lar BOLUMSUZ_ETIKETI altında
+    toplanır, SESSİZCE atlanmaz: aksi halde bu tablodaki sayıların toplamı
+    result.counts() toplamından daha AZ çıkar, "nereye kayboldu" sorusu
+    cevapsız kalırdı.
+
+    NEDEN satır sırası belgedeki İLK GÖRÜLME SIRASINA göre (alfabetik
+    DEĞİL): "BİRİNCİ BÖLÜM" < "İKİNCİ BÖLÜM" < ... < "ONUNCU BÖLÜM"
+    alfabetik sıralamada YANLIŞ sıraya girer (örn. "İKİNCİ" harf olarak
+    "BİRİNCİ"den önce gelmez ama alfabetik olarak da doğru sırayı
+    GARANTİ ETMEZ) -- belge sırası HER ZAMAN doğru okuma sırasıdır.
+    """
+    sayac: dict[str, dict[ChangeType, int]] = {}
+    ilk_gorulme: dict[str, int] = {}
+    for sira, row in enumerate(result.rows):
+        c = row.classified
+        section = c.old or c.new
+        bolum = _bolum_adi(section) or BOLUMSUZ_ETIKETI
+        sayac.setdefault(bolum, dict.fromkeys(ChangeType, 0))
+        sayac[bolum][c.change_type] += 1
+        ilk_gorulme.setdefault(bolum, sira)
+
+    bolumler = sorted(sayac, key=lambda b: ilk_gorulme[b])
+    rows = []
+    for bolum in bolumler:
+        row_dict: dict[str, object] = {"Bölüm": bolum}
+        for change_type in ChangeType:
+            row_dict[CHANGE_TYPE_LABELS_TR[change_type.value]] = sayac[bolum][change_type]
+        rows.append(row_dict)
+    return pd.DataFrame(rows, columns=_SECTION_BREAKDOWN_COLUMNS)
 
 
 def build_detail_dataframe(result: ComparisonResult) -> pd.DataFrame:

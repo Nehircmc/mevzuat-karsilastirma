@@ -16,8 +16,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from src.analysis.pipeline import ComparisonResult, ComparisonRow, compare_documents
-from src.config import CHANGE_TYPE_LABELS_TR
-from src.models import ChangeType
+from src.config import CHANGE_TYPE_LABELS_TR, SOURCE_LINK_MAX_TOTAL_BYTES
+from src.models import ChangeType, Section
 
 __all__ = [
     "ComparisonResult",
@@ -25,6 +25,8 @@ __all__ = [
     "compare_documents",
     "render_upload_widgets",
     "render_metric_cards",
+    "render_section_breakdown",
+    "build_pdf_source_uri",
     "render_change_type_filter",
     "render_side_by_side",
     "render_executive_summary",
@@ -80,6 +82,62 @@ def render_metric_cards(result: ComparisonResult) -> None:
         st.metric(CHANGE_TYPE_LABELS_TR["MOVED"], structural["MOVED"])
 
 
+def render_section_breakdown(result: ComparisonResult) -> Callable[[ComparisonRow], bool]:
+    """
+    Bölüm bazlı İÇERİK DURUMU dökümünü (bkz. metrics.build_section_breakdown)
+    ve "en fazla değişiklik" öne çıkanını render eder; seçilen bölüme göre
+    filtreleyen bir YÜKLEM (predicate) döndürür.
+
+    NEDEN bir liste/DataFrame DEĞİL bir yüklem döndürülüyor:
+    render_change_type_filter İLE AYNI desen -- app.py bu ikisini VE (AND)
+    ile birleştirip görünür satırları belirler, "hangi satır hangi bölüme
+    ait" kararı app.py'ye (orkestrasyon katmanı, Mimari İlke D) SIZMAZ.
+
+    NEDEN "en fazla değişiklik" burada summary_builder.SummaryStats.
+    en_cok_degisen_bolumler'DEN okunuyor, bu modülün KENDİ tablosundan
+    (build_section_breakdown, SADECE içerik durumu) yeniden HESAPLANMIYOR:
+    ikisi FARKLI tanımlar kullanır (en_cok_degisen_bolumler içerik VEYA
+    yapısal HERHANGİ bir değişikliği sayar, bkz. summary_builder.py NEDEN
+    notu) -- aynı panelde iki farklı "en çok değişen bölüm" sayısı
+    göstermek KAFA KARIŞTIRICI olurdu; Yönetici Özeti'ndeki İLE AYNI,
+    TEK bir tanım kullanılır.
+
+    NEDEN st.selectbox (tıklanabilir tablo satırları DEĞİL): mevcut
+    render_change_type_filter da AYNI şekilde bir seçim widget'ı (st.
+    multiselect) + yüklem desenini kullanıyor -- tutarlı bir etkileşim
+    biçimi, ve streamlit.testing.v1.AppTest ile DETERMİNİSTİK test
+    edilebilir (bkz. tests/test_ui.py).
+    """
+    import streamlit as st
+
+    from src.reporting.metrics import BOLUMSUZ_ETIKETI, build_section_breakdown
+    from src.reporting.summary_builder import build_summary_stats
+
+    st.markdown("##### Bölümlere Göre Değişiklikler")
+
+    stats = build_summary_stats(result)
+    if stats.en_cok_degisen_bolumler:
+        sayi = stats.en_cok_degisen_bolumler[0][1]
+        bolumler_metni = ", ".join(bolum for bolum, _ in stats.en_cok_degisen_bolumler)
+        st.markdown(f"**En fazla değişiklik:** {bolumler_metni} ({sayi} madde)")
+
+    breakdown = build_section_breakdown(result)
+    st.dataframe(breakdown, hide_index=True, use_container_width=True)
+
+    bolum_options = ["(Tümü)", *breakdown["Bölüm"].tolist()]
+    selected = st.selectbox("Bölüme göre filtrele", bolum_options, key="mk_bolum_filter")
+
+    def matches_bolum(row: ComparisonRow) -> bool:
+        if selected == "(Tümü)":
+            return True
+        c = row.classified
+        section = c.old or c.new
+        bolum = " > ".join(section.heading_path[:-1]) or BOLUMSUZ_ETIKETI
+        return bolum == selected
+
+    return matches_bolum
+
+
 def render_change_type_filter() -> Callable[[ComparisonRow], bool]:
     """
     İÇERİK durumu (4) + YAPISAL bayrak (2) etiketlerini TEK bir çok seçmeli
@@ -129,8 +187,92 @@ def render_change_type_filter() -> Callable[[ComparisonRow], bool]:
     return matches_filter
 
 
-def render_side_by_side(row: ComparisonRow) -> None:
-    """Tek bir ComparisonRow'u (başlık + rozet + yan yana renkli metin) render eder."""
+def build_pdf_source_uri(file_bytes: bytes, file_type: str, *, link_count: int) -> str | None:
+    """
+    Kullanıcının KENDİ yüklediği bir PDF'in baytlarını, tarayıcıda
+    doğrudan (yeni sekmede, `#page=N` ile ilgili sayfada) açılabilecek
+    bir `data:` URI'ye çevirir -- bkz. render_source_link (bu URI'nin her
+    satırda nasıl kullanıldığı).
+
+    NEDEN sunucu tarafında bir statik dosya/URL YERİNE `data:` URI:
+    Streamlit'in statik dosya sunumu (enableStaticServing) kimlik
+    doğrulaması YAPMAZ -- bir kullanıcının yüklediği (gizli olabilecek
+    bir mevzuat taslağı gibi) belgeyi bir URL üzerinden erişilebilir
+    kılmak, o URL'yi bilen/tahmin eden BAŞKA bir kullanıcıya SIZDIRIRDI.
+    `data:` URI ise SADECE bu tarayıcı sekmesinin kendi DOM'unda yaşar --
+    sunucuda YENİ bir erişim yüzeyi AÇILMAZ, hiçbir dosya diske YAZILMAZ;
+    tam olarak bu session'ın zaten bellekte tuttuğu baytlar, aynı
+    session'a geri sunulur.
+
+    None döner (çağıran taraf bu durumda SADECE düz "Sayfa N" metnini
+    gösterir, ÖZELLİK ZORLA uygulanmaz -- bkz. render_source_link):
+    - `file_type` "pdf" DEĞİLSE (DOCX akış tabanlıdır, sayfa/PDF
+      görüntüleme kavramı YOKTUR, bkz. models.py::TextUnit NEDEN notu);
+    - baytlar GERÇEKTEN bir PDF DEĞİLSE ("%PDF" imzasıyla BAŞLAMIYORSA --
+      dosya adı UZANTISINA güvenmeyen, savunma amaçlı bir ikinci kontrol);
+    - `len(file_bytes) * link_count`, SOURCE_LINK_MAX_TOTAL_BYTES'i
+      AŞIYORSA (bkz. config.py NEDEN notu -- bu URI HER satırda
+      TEKRARLANDIĞI için toplam boyut satır sayısıyla ÇARPILARAK büyür).
+    """
+    import base64
+
+    if file_type != "pdf":
+        return None
+    if not file_bytes.startswith(b"%PDF"):
+        return None
+    if link_count <= 0 or len(file_bytes) * link_count > SOURCE_LINK_MAX_TOTAL_BYTES:
+        return None
+    encoded = base64.b64encode(file_bytes).decode("ascii")
+    return f"data:application/pdf;base64,{encoded}"
+
+
+def render_source_link(section: Section | None, pdf_uri: str | None) -> str:
+    """
+    Bir Section'ın kaynak satırının HTML'ini üretir -- "mümkünse" ilkesi
+    (bkz. build_pdf_source_uri NEDEN notu) ÜÇ kademeli:
+
+    1. `pdf_uri` VARSA VE sayfa numarası biliniyorsa: tıklanabilir
+       "Belgede görüntüle · Sayfa N" bağlantısı (yeni sekmede, ilgili
+       sayfada açılır).
+    2. `pdf_uri` YOKSA (DOCX, PDF-olmayan bayt, veya boyut bütçesi
+       aşıldıysa) AMA sayfa numarası biliniyorsa: düz "Sayfa N" metni.
+    3. Sayfa numarası da BİLİNMİYORSA (DOCX'te her zaman, ya da PDF'te
+       provenance eksikse): boş string -- hiçbir şey render EDİLMEZ,
+       olmayan bir bilgi UYDURULMAZ.
+
+    NEDEN Section'ın İLK unit'inin sayfa numarası: bir madde sayfa
+    sınırında bölünmüşse (bkz. models.py::Section NEDEN notu) "kaynağa
+    git" sorusunun doğal cevabı, maddenin BAŞLADIĞI sayfadır.
+    """
+    if section is None:
+        return ""
+    sayfa_no = next((u.page_no for u in section.units if u.page_no is not None), None)
+    if sayfa_no is None:
+        return ""
+    if pdf_uri:
+        return (
+            f'<a class="mk-source-link" href="{pdf_uri}#page={sayfa_no}" '
+            f'target="_blank" rel="noopener noreferrer">Belgede görüntüle · Sayfa {sayfa_no}</a>'
+        )
+    return f'<span class="mk-source-page">Sayfa {sayfa_no}</span>'
+
+
+def render_side_by_side(
+    row: ComparisonRow,
+    *,
+    old_pdf_uri: str | None = None,
+    new_pdf_uri: str | None = None,
+) -> None:
+    """
+    Tek bir ComparisonRow'u (başlık + rozet + yan yana renkli metin +
+    varsa kaynak bağlantısı/sayfası) render eder.
+
+    NEDEN old_pdf_uri/new_pdf_uri PARAMETRE (her satırda YENİDEN
+    HESAPLANMIYOR): build_pdf_source_uri her çağrıldığında TÜM PDF'i
+    base64'e çevirir -- bu, app.py'de SATIR BAŞINA DEĞİL, belge başına
+    BİR KEZ çağrılır, sonuç (aynı `data:` URI) TÜM satırlara PAYLAŞILARAK
+    geçirilir.
+    """
     import streamlit as st
 
     from src.reporting.html_renderer import render_row_body_html, render_row_header_html
@@ -144,13 +286,19 @@ def render_side_by_side(row: ComparisonRow) -> None:
     st.markdown(header_html, unsafe_allow_html=True)
 
     old_html, new_html = render_row_body_html(c.old, c.new, c.change_type, row.section_diff)
+    old_source_html = render_source_link(c.old, old_pdf_uri)
+    new_source_html = render_source_link(c.new, new_pdf_uri)
 
     empty_marker = '<span class="mk-empty-side">(karşılığı yok)</span>'
     col1, col2 = st.columns(2)
     with col1:
         st.markdown(f'<div class="mk-column">{old_html or empty_marker}</div>', unsafe_allow_html=True)
+        if old_source_html:
+            st.markdown(old_source_html, unsafe_allow_html=True)
     with col2:
         st.markdown(f'<div class="mk-column">{new_html or empty_marker}</div>', unsafe_allow_html=True)
+        if new_source_html:
+            st.markdown(new_source_html, unsafe_allow_html=True)
 
 
 def render_executive_summary(result: ComparisonResult) -> None:

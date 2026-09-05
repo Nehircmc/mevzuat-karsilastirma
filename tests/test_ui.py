@@ -17,11 +17,11 @@ import json
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.config import ASSETS_DIR, BASE_DIR, COLOR_PALETTE, SAMPLES_DIR
+from src.config import ASSETS_DIR, BASE_DIR, COLOR_PALETTE, SAMPLES_DIR, SOURCE_LINK_MAX_TOTAL_BYTES
 from src.ingestion.base import CorruptDocumentError
-from src.models import ChangeType
+from src.models import ChangeType, Section, TextUnit
 from src.ui import styles
-from src.ui.components import ComparisonResult, compare_documents
+from src.ui.components import ComparisonResult, build_pdf_source_uri, compare_documents, render_source_link
 
 _APP_PATH = BASE_DIR / "app.py"
 
@@ -165,6 +165,85 @@ class TestCompareDocumentsGercekOrnekBelgelerle:
         )
 
 
+def _section_sayfa(sayfa_no: int | None, madde_no: int = 1) -> Section:
+    unit = TextUnit(
+        doc_id="t", page_no=sayfa_no, block_index=0, char_start=0, char_end=1,
+        heading_path=(), text="x",
+    )
+    return Section(
+        doc_id="t", heading_path=("MADDE 1",), section_type="MADDE",
+        madde_no=madde_no, baslik="X", order_index=0, units=[unit],
+    )
+
+
+class TestBuildPdfSourceUri:
+    """
+    build_pdf_source_uri -- "mümkünse" ilkesi (bkz. components.py NEDEN
+    notu): PDF DEĞİLSE, gerçek bir PDF DEĞİLSE ya da toplam bayt bütçesi
+    (dosya boyutu × satır sayısı) AŞILIRSA None döner, özellik ZORLA
+    uygulanmaz.
+    """
+
+    _GERCEK_PDF_BYTES = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+
+    def test_gecerli_pdf_data_uri_uretir(self):
+        uri = build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=1)
+        assert uri is not None
+        assert uri.startswith("data:application/pdf;base64,")
+
+    def test_docx_icin_none_doner(self):
+        # NEDEN: DOCX akış tabanlıdır, PDF görüntüleme kavramı YOKTUR
+        # (bkz. models.py::TextUnit NEDEN notu).
+        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "docx", link_count=1) is None
+
+    def test_gercek_pdf_olmayan_baytlar_icin_none_doner(self):
+        # NEDEN: dosya adı ".pdf" ile bitse bile İÇERİK "%PDF" imzasıyla
+        # BAŞLAMIYORSA (dosya adı uzantısına GÜVENMEYEN, savunma amaçlı
+        # ikinci bir kontrol) None dönmeli.
+        assert build_pdf_source_uri(b"bu bir PDF degil", "pdf", link_count=1) is None
+
+    def test_link_count_sifirsa_none_doner(self):
+        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=0) is None
+
+    def test_toplam_boyut_butceyi_asarsa_none_doner(self):
+        # NEDEN: data URI HER satırda TEKRARLANIR (bkz. config.py::
+        # SOURCE_LINK_MAX_TOTAL_BYTES NEDEN notu) -- dosya boyutu × satır
+        # sayısı bütçeyi aşınca özellik ZORLA uygulanmaz, None döner.
+        link_count = SOURCE_LINK_MAX_TOTAL_BYTES // len(self._GERCEK_PDF_BYTES) + 1
+        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is None
+
+    def test_butce_siniri_icindeyse_uri_uretilir(self):
+        link_count = max(1, SOURCE_LINK_MAX_TOTAL_BYTES // len(self._GERCEK_PDF_BYTES) - 1)
+        assert build_pdf_source_uri(self._GERCEK_PDF_BYTES, "pdf", link_count=link_count) is not None
+
+
+class TestRenderSourceLink:
+    def test_pdf_uri_varsa_tiklanabilir_baglanti_uretir(self):
+        section = _section_sayfa(8)
+        html = render_source_link(section, "data:application/pdf;base64,AAAA")
+        assert '<a class="mk-source-link"' in html
+        assert 'href="data:application/pdf;base64,AAAA#page=8"' in html
+        assert "Belgede görüntüle · Sayfa 8" in html
+        assert 'target="_blank"' in html and 'rel="noopener noreferrer"' in html
+
+    def test_pdf_uri_yoksa_duz_sayfa_metni_uretir(self):
+        section = _section_sayfa(8)
+        html = render_source_link(section, None)
+        assert html == '<span class="mk-source-page">Sayfa 8</span>'
+        assert "<a" not in html
+
+    def test_sayfa_no_yoksa_bos_string(self):
+        # NEDEN: DOCX'te page_no HER ZAMAN None'dır (bkz. models.py NEDEN
+        # notu) -- olmayan bir sayfa bilgisi UYDURULMAMALI.
+        section = _section_sayfa(None)
+        assert render_source_link(section, "data:application/pdf;base64,AAAA") == ""
+
+    def test_section_none_ise_bos_string(self):
+        # NEDEN: REMOVED bir satırda new=None, ADDED bir satırda old=None --
+        # olmayan taraf için hiçbir şey render EDİLMEMELİ.
+        assert render_source_link(None, "data:application/pdf;base64,AAAA") == ""
+
+
 class TestAppUctanUcaDumanTesti:
     """streamlit.testing.v1.AppTest ile app.py'nin GERÇEK bir çalıştırmasını simüle eder."""
 
@@ -278,6 +357,155 @@ class TestAppUctanUcaDumanTesti:
 
         download_keys = {b.key for b in at.get("download_button")}
         assert download_keys == {"mk_download_excel", "mk_download_csv", "mk_download_html"}
+
+    def test_bolum_dokumu_ve_en_fazla_degisiklik_gorunur(self):
+        # NEDEN: "Bölümlere Göre Değişiklikler" paneli (bkz.
+        # components.render_section_breakdown) app.py'ye entegre edildi --
+        # bu, entegrasyonun GERÇEKTEN çalıştığını (izole metrics.py
+        # testlerinin ötesinde) uçtan uca doğrular.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        visible_markdown = "\n".join(m.value for m in at.get("markdown"))
+        assert "Bölümlere Göre Değişiklikler" in visible_markdown
+        assert "En fazla değişiklik:" in visible_markdown and "ÜÇÜNCÜ BÖLÜM (4 madde)" in visible_markdown
+
+        dataframes = at.get("dataframe")
+        assert len(dataframes) == 1
+        breakdown_df = dataframes[0].value
+        assert list(breakdown_df["Bölüm"]) == ["BİRİNCİ BÖLÜM", "İKİNCİ BÖLÜM", "ÜÇÜNCÜ BÖLÜM", "DÖRDÜNCÜ BÖLÜM"]
+        assert breakdown_df.set_index("Bölüm").loc["BİRİNCİ BÖLÜM"].to_dict() == {
+            "Değişmedi": 3, "Değişti": 1, "Yeni Eklendi": 0, "Kaldırıldı": 0,
+        }
+
+        selectbox = at.selectbox(key="mk_bolum_filter")
+        assert selectbox.value == "(Tümü)"
+        assert selectbox.options == ["(Tümü)", "BİRİNCİ BÖLÜM", "İKİNCİ BÖLÜM", "ÜÇÜNCÜ BÖLÜM", "DÖRDÜNCÜ BÖLÜM"]
+
+    def test_bolum_secilince_sadece_o_bolume_ait_maddeler_gorunur(self):
+        # NEDEN kritik: kullanıcı geri bildiriminin TAM konusu -- bir bölüm
+        # seçildiğinde SADECE o bölüme ait maddeler görünmeli, mevcut
+        # Değişim Türü filtresiyle (VE mantığıyla) UYUMLU çalışmalı.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        at.selectbox(key="mk_bolum_filter").set_value("İKİNCİ BÖLÜM")
+        at.run(timeout=30)
+
+        assert not at.exception
+        visible_text = "\n".join(m.value for m in at.get("markdown"))
+        # İKİNCİ BÖLÜM'e ait maddeler (satır BAŞLIKLARI, "MADDE N —" ile):
+        assert "MADDE 5 — Veri Sorumluluğu" in visible_text
+        assert "MADDE 6 — Veri Paylaşımı" in visible_text
+        assert "MADDE 7 — Veri Kalitesi ve Güvenliği" in visible_text
+        assert "MADDE 8 — Arşivleme Esasları" in visible_text
+        # NEDEN "MADDE N —" ÖNEKİYLE aranıyor (sadece başlık metniyle DEĞİL):
+        # Yönetici Özeti'nin "Öne Çıkan Değişiklikler" listesi (bkz.
+        # summary_builder.py) satır FİLTRESİNDEN BAĞIMSIZ olarak HER ZAMAN
+        # görünür -- "Birim Sorumlulukları" gibi bir başlık SADECE metin
+        # olarak arandığında orada da eşleşir, YANLIŞ POZİTİF verir.
+        assert "MADDE 1 —" not in visible_text  # Amaç (BİRİNCİ BÖLÜM)
+        assert "MADDE 9 —" not in visible_text  # Birim Sorumlulukları (ÜÇÜNCÜ BÖLÜM)
+        assert "MADDE 12 —" not in visible_text  # Yürürlük (DÖRDÜNCÜ BÖLÜM)
+
+    def test_pdf_karsilastirmasinda_kaynak_baglantisi_gorunur(self):
+        # NEDEN: kullanıcı geri bildiriminin TAM konusu -- her madde için
+        # "Belgede görüntüle · Sayfa N" tıklanabilir bağlantısı app.py'ye
+        # entegre edildi; örnek belgeler küçük olduğu için (bkz.
+        # SOURCE_LINK_MAX_TOTAL_BYTES bütçesi) bağlantı ÜRETİLMELİ, düz
+        # metne DÜŞMEMELİ.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        visible_html = "\n".join(m.value for m in at.get("markdown"))
+        # MADDE 1 (Amaç) her iki belgede de 1. sayfada (bkz. script çıktısı).
+        assert 'class="mk-source-link"' in visible_html
+        assert "Belgede görüntüle · Sayfa 1" in visible_html
+        assert 'href="data:application/pdf;base64,' in visible_html
+        assert '#page=1"' in visible_html
+
+    def test_kaldirilan_maddede_sadece_eski_belge_baglantisi_gorunur(self):
+        # NEDEN: kullanıcının AÇIKÇA istediği kural -- REMOVED bir satırda
+        # (new=None) SADECE eski belge bağlantısı görünmeli. "Arşivleme
+        # Esasları" (eski MADDE 8) REMOVED'dır.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        markdown_values = [m.value for m in at.get("markdown")]
+        # NEDEN "mk-section-header" sınıfıyla arıyoruz (SADECE başlık
+        # metniyle DEĞİL): Yönetici Özeti'nin "Öne Çıkan Değişiklikler"
+        # listesi de "Arşivleme Esasları" metnini İÇERİR (bkz. bir önceki
+        # testin NEDEN notu) -- bu, o widget'la YANLIŞ eşleşmeyi önler,
+        # sadece render_row_header_html'in ürettiği GERÇEK satır başlığını
+        # bulur.
+        header_index = next(
+            i for i, v in enumerate(markdown_values)
+            if "mk-section-header" in v and "Arşivleme Esasları" in v
+        )
+        # Satırın gövdesi/bağlantıları başlıktan HEMEN SONRA render edilir
+        # (bkz. app.py'nin satır döngüsü) -- bu satıra ait bağlantı
+        # sayısını, bir SONRAKİ satır başlığına kadar olan aralıkta sayarız.
+        next_header_index = next(
+            (i for i in range(header_index + 1, len(markdown_values)) if "mk-section-header" in markdown_values[i]),
+            len(markdown_values),
+        )
+        row_block = "\n".join(markdown_values[header_index:next_header_index])
+        assert row_block.count('class="mk-source-link"') == 1
+
+    def test_docx_karsilastirmasinda_kaynak_baglantisi_gorunmez(self):
+        # NEDEN: DOCX akış tabanlıdır, sayfa/PDF görüntüleme kavramı YOKTUR
+        # (bkz. models.py::TextUnit NEDEN notu) -- özellik "mümkünse"
+        # ilkesiyle SESSİZCE devre dışı kalmalı, hatalı/uydurma bir sayfa
+        # bilgisi GÖSTERİLMEMELİ.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.docx").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.docx").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload(
+            "yonetmelik_2019.docx", old_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        at.file_uploader(key="mk_new_uploader").upload(
+            "yonetmelik_2023.docx", new_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        at.run(timeout=60)
+
+        assert not at.exception
+        # NEDEN sadece satır widget'ları (ilk widget HARİÇ): sayfanın en
+        # başına enjekte edilen CSS (bkz. styles.inject) da BİR markdown
+        # widget'ıdır ve ".mk-source-link {...}" SEÇİCİSİNİ (metin olarak)
+        # İÇERİR -- bu, class="..." ATTRIBUTE'ÜNÜN gerçekten HİÇBİR
+        # widget'ta üretilmediğini kontrol ederek önlenir.
+        visible_html = "\n".join(m.value for m in at.get("markdown"))
+        assert 'class="mk-source-link"' not in visible_html
+        assert 'class="mk-source-page"' not in visible_html
 
     def test_yukleme_alanlari_sadece_pdf_docx_kabul_eder(self):
         # NEDEN: st.file_uploader(type=["pdf","docx"]) kısıtlaması WIDGET

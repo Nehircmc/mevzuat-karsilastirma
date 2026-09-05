@@ -21,7 +21,13 @@ from src.config import CHANGE_TYPE_LABELS_TR, SAMPLES_DIR
 from src.models import ChangeType
 from src.reporting.exporter import export_to_csv, export_to_excel, export_to_html
 from src.reporting.html_renderer import render_summary_html
-from src.reporting.metrics import build_detail_dataframe, build_structural_dataframe, build_summary_dataframe
+from src.reporting.metrics import (
+    BOLUMSUZ_ETIKETI,
+    build_detail_dataframe,
+    build_section_breakdown,
+    build_structural_dataframe,
+    build_summary_dataframe,
+)
 from src.reporting.summary_builder import SummaryStats, build_summary_stats, render_summary_markdown
 
 with open(SAMPLES_DIR / "ground_truth.json", encoding="utf-8") as f:
@@ -145,6 +151,85 @@ class TestMetricsStructuralDataFrame:
         df = build_structural_dataframe(empty)
         assert len(df) == 2
         assert (df["Sayı"] == 0).all()
+
+
+class TestMetricsSectionBreakdown:
+    """
+    build_section_breakdown -- BÖLÜM bazında İÇERİK DURUMU dökümü (bkz.
+    metrics.py NEDEN notu). ground_truth.json'daki 2019/2023 örneğinde
+    dört bölüm var: BİRİNCİ/İKİNCİ/ÜÇÜNCÜ/DÖRDÜNCÜ BÖLÜM.
+    """
+
+    def test_kolonlar_dogru(self):
+        df = build_section_breakdown(_RESULT)
+        assert list(df.columns) == ["Bölüm", "Değişmedi", "Değişti", "Yeni Eklendi", "Kaldırıldı"]
+
+    def test_bolum_sirasi_belge_sirasidir(self):
+        df = build_section_breakdown(_RESULT)
+        assert list(df["Bölüm"]) == ["BİRİNCİ BÖLÜM", "İKİNCİ BÖLÜM", "ÜÇÜNCÜ BÖLÜM", "DÖRDÜNCÜ BÖLÜM"]
+
+    def test_sayilar_ground_truth_ile_esler(self):
+        # NEDEN bu tam sayılar: gerçek 2019/2023 örneğinde her bölümün
+        # içeriği BİLİNEN bir dağılıma sahip (bkz. sınıf docstring'i);
+        # BİRİNCİ BÖLÜM (3 Değişmedi + 1 Değişti) kullanıcının kendi
+        # verdiği örnekle BİREBİR örtüşüyor.
+        df = build_section_breakdown(_RESULT)
+        by_bolum = df.set_index("Bölüm")
+        assert by_bolum.loc["BİRİNCİ BÖLÜM"].to_dict() == {
+            "Değişmedi": 3, "Değişti": 1, "Yeni Eklendi": 0, "Kaldırıldı": 0,
+        }
+        assert by_bolum.loc["İKİNCİ BÖLÜM"].to_dict() == {
+            "Değişmedi": 1, "Değişti": 2, "Yeni Eklendi": 0, "Kaldırıldı": 1,
+        }
+        assert by_bolum.loc["ÜÇÜNCÜ BÖLÜM"].to_dict() == {
+            "Değişmedi": 1, "Değişti": 1, "Yeni Eklendi": 2, "Kaldırıldı": 0,
+        }
+        assert by_bolum.loc["DÖRDÜNCÜ BÖLÜM"].to_dict() == {
+            "Değişmedi": 3, "Değişti": 0, "Yeni Eklendi": 0, "Kaldırıldı": 0,
+        }
+
+    def test_toplam_result_counts_ile_esler(self):
+        # NEDEN kritik: hiçbir maddenin bölüm dökümünde SESSİZCE
+        # kaybolmadığını (bkz. BOLUMSUZ_ETIKETI NEDEN notu) doğrular --
+        # tablodaki TÜM hücrelerin toplamı result.counts() toplamına
+        # EŞİT olmalı.
+        df = build_section_breakdown(_RESULT)
+        toplam_tablo = df[["Değişmedi", "Değişti", "Yeni Eklendi", "Kaldırıldı"]].to_numpy().sum()
+        assert toplam_tablo == sum(_RESULT.counts().values()) == _EXPECTED_TOTAL
+
+    def test_bolum_bilgisi_olmayan_madde_ayri_kovada_toplanir(self):
+        from src.analysis.classifier import ClassifiedSection
+        from src.analysis.pipeline import ComparisonResult, ComparisonRow
+        from src.models import DocumentMeta, Section, TextUnit
+
+        unit = TextUnit(doc_id="t", page_no=1, block_index=0, char_start=0, char_end=1, heading_path=(), text="x")
+        # NEDEN heading_path tek elemanlı ("MADDE 1"): [:-1] alındığında
+        # KISIM/BÖLÜM zinciri BOŞ kalır -- bölüm bilgisi olmayan madde budur.
+        section = Section(
+            doc_id="t", heading_path=("MADDE 1",), section_type="MADDE",
+            madde_no=1, baslik="X", order_index=0, units=[unit],
+        )
+        result = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=[ComparisonRow(classified=ClassifiedSection(change_type=ChangeType.IDENTICAL, old=section, new=section), section_diff=None)],
+        )
+        df = build_section_breakdown(result)
+        assert list(df["Bölüm"]) == [BOLUMSUZ_ETIKETI]
+        assert df.iloc[0]["Değişmedi"] == 1
+
+    def test_bos_sonucta_bos_dataframe_dogru_kolonlarla(self):
+        from src.analysis.pipeline import ComparisonResult
+        from src.models import DocumentMeta
+
+        empty = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=[],
+        )
+        df = build_section_breakdown(empty)
+        assert len(df) == 0
+        assert list(df.columns) == ["Bölüm", "Değişmedi", "Değişti", "Yeni Eklendi", "Kaldırıldı"]
 
 
 class TestMetricsDetailDataFrame:
