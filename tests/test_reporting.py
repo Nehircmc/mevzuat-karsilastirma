@@ -316,7 +316,7 @@ class TestSummaryBuilderStats:
         # veri_yonetisim_kurulu(ADDED), acik_veri_portali(ADDED) -- 4 madde,
         # ground truth'taki HERHANGİ başka bir bölümden fazla.
         stats = build_summary_stats(_RESULT)
-        assert stats.en_cok_degisen_bolum == ("ÜÇÜNCÜ BÖLÜM", 4)
+        assert stats.en_cok_degisen_bolumler == [("ÜÇÜNCÜ BÖLÜM", 4)]
 
     def test_yapisal_sayilar_ground_truth_ile_esler(self):
         stats = build_summary_stats(_RESULT)
@@ -338,10 +338,131 @@ class TestSummaryBuilderStats:
             rows=[ComparisonRow(classified=ClassifiedSection(change_type=ChangeType.IDENTICAL, old=section, new=section), section_diff=None)],
         )
         stats = build_summary_stats(result)
-        assert stats.en_cok_degisen_bolum is None
+        assert stats.en_cok_degisen_bolumler == []
+
+    def test_birden_fazla_bolum_esitse_hepsi_listelenir(self):
+        # NEDEN: "en çok değişen bölüm" TEK bir kazanana rastgele/dict-
+        # sıralamasına göre indirgenmemeli -- iki bölüm AYNI sayıda
+        # değişiklik taşıyorsa İKİSİ de listelenmeli (bkz.
+        # summary_builder.py::_en_cok_degisen_bolumler NEDEN notu).
+        from src.analysis.classifier import ClassifiedSection
+        from src.analysis.pipeline import ComparisonResult, ComparisonRow
+        from src.models import DocumentMeta, Section, TextUnit
+
+        def _section(heading_path, madde_no):
+            unit = TextUnit(doc_id="t", page_no=1, block_index=0, char_start=0, char_end=1, heading_path=(), text="x")
+            return Section(
+                doc_id="t", heading_path=heading_path, section_type="MADDE",
+                madde_no=madde_no, baslik="X", order_index=madde_no, units=[unit],
+            )
+
+        a_old = _section(("A BÖLÜMÜ", "MADDE 1"), 1)
+        a_new = _section(("A BÖLÜMÜ", "MADDE 1"), 2)  # numarası değişti
+        b_old = _section(("B BÖLÜMÜ", "MADDE 2"), 1)
+        b_new = _section(("B BÖLÜMÜ", "MADDE 2"), 2)  # numarası değişti
+
+        result = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=[
+                ComparisonRow(
+                    classified=ClassifiedSection(
+                        change_type=ChangeType.IDENTICAL, old=a_old, new=a_new, numarasi_degisti=True
+                    ),
+                    section_diff=None,
+                ),
+                ComparisonRow(
+                    classified=ClassifiedSection(
+                        change_type=ChangeType.IDENTICAL, old=b_old, new=b_new, numarasi_degisti=True
+                    ),
+                    section_diff=None,
+                ),
+            ],
+        )
+        stats = build_summary_stats(result)
+        assert stats.en_cok_degisen_bolumler == [("A BÖLÜMÜ", 1), ("B BÖLÜMÜ", 1)]
 
     def test_sonuc_tipi(self):
         assert isinstance(build_summary_stats(_RESULT), SummaryStats)
+
+
+class TestSummaryBuilderOneCikanDegisiklikler:
+    """
+    "Öne Çıkan Değişiklikler" -- SADECE metinsel olarak gözlemlenebilen
+    olgulara dayalı, şablon tabanlı kısa cümle listesi (bkz.
+    summary_builder.py::_one_cikan_degisiklikler NEDEN notu).
+    """
+
+    def test_gercek_veri_setinde_beklenen_cumleler_gecer(self):
+        # NEDEN bu ÜÇ cümle: ground_truth.json'da tam olarak bu maddeler
+        # ilgili kategoriye düşer (bkz. TestMetricsDetailDataFrame ve
+        # kullanıcı geri bildiriminin ÖRNEK cümleleriyle birebir örtüşür).
+        stats = build_summary_stats(_RESULT)
+        assert "Veri Paylaşımı maddesinde içerik değişikliği tespit edildi." in stats.one_cikan_degisiklikler
+        assert "Arşivleme Esasları maddesi yeni belgede bulunmuyor." in stats.one_cikan_degisiklikler
+        assert "Veri Yönetişim Kurulu maddesi yeni belgede eklendi." in stats.one_cikan_degisiklikler
+        assert f"{_EXPECTED_STRUCTURAL_COUNTS['RENUMBERED']} maddenin numarası değişti." in stats.one_cikan_degisiklikler
+
+    def test_hicbir_yorum_kelimesi_gecmez(self):
+        # NEDEN kritik: kullanıcı geri bildiriminin AÇIKÇA yasakladığı
+        # hukuki/normatif yorum kelimeleri hiçbir şablonda YER ALMAMALI.
+        stats = build_summary_stats(_RESULT)
+        yasakli_kelimeler = [
+            "zayıflat", "güçlendir", "risk", "hukuken", "önemli", "kapsamlı", "olumsuz", "olumlu",
+        ]
+        for cumle in stats.one_cikan_degisiklikler:
+            for kelime in yasakli_kelimeler:
+                assert kelime not in cumle.lower(), f"yasaklı kelime '{kelime}' şu cümlede bulundu: {cumle!r}"
+
+    def test_moved_sifirsa_yeri_degisti_cumlesi_yok(self):
+        stats = build_summary_stats(_RESULT)
+        assert not any("yeri değişti" in c for c in stats.one_cikan_degisiklikler)
+
+    def test_hicbir_degisiklik_yoksa_bos_liste(self):
+        from src.analysis.classifier import ClassifiedSection
+        from src.analysis.pipeline import ComparisonResult, ComparisonRow
+        from src.models import DocumentMeta, Section, TextUnit
+
+        unit = TextUnit(doc_id="t", page_no=1, block_index=0, char_start=0, char_end=1, heading_path=(), text="x")
+        section = Section(
+            doc_id="t", heading_path=("BİRİNCİ BÖLÜM", "MADDE 1"), section_type="MADDE",
+            madde_no=1, baslik="X", order_index=0, units=[unit],
+        )
+        result = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=[ComparisonRow(classified=ClassifiedSection(change_type=ChangeType.IDENTICAL, old=section, new=section), section_diff=None)],
+        )
+        stats = build_summary_stats(result)
+        assert stats.one_cikan_degisiklikler == []
+
+    def test_kategori_basina_ust_sinir_ve_toplu_ek_cumle(self):
+        from src.analysis.classifier import ClassifiedSection
+        from src.analysis.pipeline import ComparisonResult, ComparisonRow
+        from src.models import DocumentMeta, Section, TextUnit
+
+        rows = []
+        for i in range(7):  # SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY (5) + 2
+            unit = TextUnit(doc_id="t", page_no=1, block_index=0, char_start=0, char_end=1, heading_path=(), text="x")
+            section = Section(
+                doc_id="t", heading_path=("BÖLÜM", f"MADDE {i}"), section_type="MADDE",
+                madde_no=i, baslik=f"Madde{i}", order_index=i, units=[unit],
+            )
+            rows.append(
+                ComparisonRow(classified=ClassifiedSection(change_type=ChangeType.ADDED, old=None, new=section), section_diff=None)
+            )
+        result = ComparisonResult(
+            old_meta=DocumentMeta(doc_id="x", source_path="x", file_type="pdf"),
+            new_meta=DocumentMeta(doc_id="y", source_path="y", file_type="pdf"),
+            rows=rows,
+        )
+        stats = build_summary_stats(result)
+        eklenen_cumleler = [c for c in stats.one_cikan_degisiklikler if "eklen" in c]
+        assert len(eklenen_cumleler) == 6  # 5 tek tek + 1 toplu
+        assert "Yeni belgede eklenen 2 madde daha var." in stats.one_cikan_degisiklikler
+
+    def test_deterministik_iki_cagri_ayni_sonucu_verir(self):
+        assert build_summary_stats(_RESULT).one_cikan_degisiklikler == build_summary_stats(_RESULT).one_cikan_degisiklikler
 
 
 class TestSummaryBuilderMarkdown:
@@ -391,10 +512,43 @@ class TestSummaryBuilderMarkdown:
             sayilar=dict.fromkeys(ChangeType, 0),
             yuzdeler=dict.fromkeys(ChangeType, 0.0),
             yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
-            en_cok_degisen_bolum=None,
+            en_cok_degisen_bolumler=[],
         )
         md = render_summary_markdown(stats)
         assert "En çok değişiklik" not in md
+
+    def test_birden_fazla_bolum_esitse_ikisi_de_ve_cogul_ek_gorunur(self):
+        stats = SummaryStats(
+            toplam_karsilastirma=2,
+            eski_toplam_madde=2,
+            yeni_toplam_madde=2,
+            sayilar=dict.fromkeys(ChangeType, 0),
+            yuzdeler=dict.fromkeys(ChangeType, 0.0),
+            yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
+            en_cok_degisen_bolumler=[("A BÖLÜMÜ", 2), ("B BÖLÜMÜ", 2)],
+        )
+        md = render_summary_markdown(stats)
+        assert "A BÖLÜMÜ" in md and "B BÖLÜMÜ" in md
+        assert "bölümlerinde görüldü (2 madde)" in md
+
+    def test_one_cikan_degisiklikler_bolumu_bos_ise_gorunmez(self):
+        stats = SummaryStats(
+            toplam_karsilastirma=0,
+            eski_toplam_madde=0,
+            yeni_toplam_madde=0,
+            sayilar=dict.fromkeys(ChangeType, 0),
+            yuzdeler=dict.fromkeys(ChangeType, 0.0),
+            yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
+            one_cikan_degisiklikler=[],
+        )
+        md = render_summary_markdown(stats)
+        assert "Öne Çıkan Değişiklikler" not in md
+
+    def test_one_cikan_degisiklikler_gercek_veride_gorunur(self):
+        stats = build_summary_stats(_RESULT)
+        md = render_summary_markdown(stats)
+        assert "### Öne Çıkan Değişiklikler" in md
+        assert "- Veri Paylaşımı maddesinde içerik değişikliği tespit edildi." in md
 
     def test_deterministik_iki_cagri_ayni_sonucu_verir(self):
         stats = build_summary_stats(_RESULT)
@@ -410,11 +564,31 @@ class TestSummaryHtml:
             sayilar=dict.fromkeys(ChangeType, 0),
             yuzdeler=dict.fromkeys(ChangeType, 0.0),
             yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
-            en_cok_degisen_bolum=("<script>alert(1)</script>", 3),
+            en_cok_degisen_bolumler=[("<script>alert(1)</script>", 3)],
         )
         html = render_summary_html(stats)
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
+
+    def test_one_cikan_degisiklikler_ozel_karakter_kacirilir(self):
+        stats = SummaryStats(
+            toplam_karsilastirma=1,
+            eski_toplam_madde=1,
+            yeni_toplam_madde=1,
+            sayilar=dict.fromkeys(ChangeType, 0),
+            yuzdeler=dict.fromkeys(ChangeType, 0.0),
+            yapisal_sayilar={"RENUMBERED": 0, "MOVED": 0},
+            one_cikan_degisiklikler=['<script>alert(1)</script> maddesi yeni belgede eklendi.'],
+        )
+        html = render_summary_html(stats)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_one_cikan_degisiklikler_gercek_veride_gorunur(self):
+        stats = build_summary_stats(_RESULT)
+        html = render_summary_html(stats)
+        assert "<h3>Öne Çıkan Değişiklikler</h3>" in html
+        assert "<li>Arşivleme Esasları maddesi yeni belgede bulunmuyor.</li>" in html
 
     def test_her_icerik_ve_yapisal_rozet_gecer(self):
         stats = build_summary_stats(_RESULT)

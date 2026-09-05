@@ -169,6 +169,17 @@ IDENTICAL_CHAR_SIMILARITY_THRESHOLD = 0.98  # difflib SequenceMatcher.ratio()
 MOVED_MIN_POSITION_DELTA = 3  # sıra numarasındaki minimum kayma
 
 # --------------------------------------------------------------------------
+# YÖNETİCİ ÖZETİ -- "ÖNE ÇIKAN DEĞİŞİKLİKLER"
+# --------------------------------------------------------------------------
+# NEDEN bir ÜST SINIR gerekli: "Öne Çıkan Değişiklikler" KISA bir liste
+# olmalı (bkz. summary_builder.py NEDEN notu) -- MODIFIED/ADDED/REMOVED
+# kategorilerinin HER BİRİ onlarca madde içerebilir; hepsini tek tek
+# maddelemek özeti bir yönetici için OKUNAMAZ hale getirir. Bu sayı
+# AŞILDIĞINDA kalan kısım tek bir toplu cümleyle özetlenir (bkz.
+# summary_builder.py::_one_cikan_bolum_maddeleri).
+SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY = 5
+
+# --------------------------------------------------------------------------
 # DIFF RENK PALETİ (HTML side-by-side görünüm için)
 # --------------------------------------------------------------------------
 # NEDEN: Renkler burada sabitlenir ki html_renderer.py ve styles.py aynı

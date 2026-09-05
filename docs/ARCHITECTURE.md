@@ -143,9 +143,19 @@ boru hattının değil. Bu proje BİLEREK bu sınırı aşmaz:
   şablonlara (`f"- **{label}**: {count} madde (%{pct})"` gibi) sayı
   yerleştirir; "önemli değişiklik", "dikkat edilmesi gereken" gibi
   YORUM İÇEREN hiçbir ifade YOKTUR.
-- "En çok değişiklik ... bölümünde görüldü" istatistiği bile SAF bir
-  SAYISAL AGREGASYONDUR (bölüm başına IDENTICAL-olmayan madde sayımı),
-  hangi değişikliğin "daha önemli" olduğuna dair bir YARGI DEĞİLDİR.
+- "En çok değişiklik ... bölümünde/bölümlerinde görüldü" istatistiği bile
+  SAF bir SAYISAL AGREGASYONDUR (bölüm başına IDENTICAL-olmayan madde
+  sayımı), hangi değişikliğin "daha önemli" olduğuna dair bir YARGI
+  DEĞİLDİR -- birden fazla bölüm AYNI (en yüksek) sayıya sahipse HEPSİ
+  listelenir (bkz. `SummaryStats.en_cok_degisen_bolumler`), TEK birini
+  öne çıkarmak GİZLİ bir öncelik kararı olurdu.
+- "Öne Çıkan Değişiklikler" listesi (`_one_cikan_degisiklikler`) de AYNI
+  disiplinle üretilir: her cümle "{madde} maddesinde içerik değişikliği
+  tespit edildi." gibi SABİT bir şablona madde adı/sayı yerleştirir;
+  "önemli", "riskli", "kapsamlı" gibi bir NİTELEME kelimesi HİÇBİR
+  şablonda yer almaz -- hangi maddenin listelendiği bir SIRALAMA/KESME
+  (ilk N, bkz. `SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY`) sonucu, bir
+  "önem" yargısı değildir.
 - Hiçbir LLM/NLP metin üretim çağrısı YOKTUR — özet, difflib'in kendi
   ürettiği yapısal sayımlardan DETERMİNİSTİK olarak türetilir (aynı
   girdi → HER ZAMAN birebir aynı çıktı, bkz.

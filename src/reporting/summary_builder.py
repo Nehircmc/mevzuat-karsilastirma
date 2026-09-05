@@ -21,8 +21,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from src.analysis.classifier import ClassifiedSection
 from src.analysis.pipeline import ComparisonResult
-from src.config import CHANGE_TYPE_LABELS_TR
+from src.config import CHANGE_TYPE_LABELS_TR, SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY
 from src.models import ChangeType, Section
 
 
@@ -46,10 +47,17 @@ class SummaryStats:
     # bulunabilir (bkz. ComparisonResult.structural_counts() NEDEN notu)
     # -- bu yüzden `sayilar` ile TOPLANAMAZ.
     yapisal_sayilar: dict[str, int]
-    # (bölüm adı, o bölümde GERÇEKTEN bir şey değişen -- içerik VEYA
-    # yapısal -- madde sayısı) -- hiç değişiklik yoksa ya da hiçbir
-    # Section'ın bölüm bilgisi yoksa None.
-    en_cok_degisen_bolum: tuple[str, int] | None = field(default=None)
+    # [(bölüm adı, o bölümde GERÇEKTEN bir şey değişen -- içerik VEYA
+    # yapısal -- madde sayısı), ...] -- BİRDEN FAZLA bölüm AYNI (en yüksek)
+    # sayıya sahipse HEPSİ listelenir (bkz. _en_cok_degisen_bolumler NEDEN
+    # notu); hiç değişiklik yoksa ya da hiçbir Section'ın bölüm bilgisi
+    # yoksa boş liste.
+    en_cok_degisen_bolumler: list[tuple[str, int]] = field(default_factory=list)
+    # Şablon tabanlı, SADECE metinsel olarak gözlemlenebilen olgulara
+    # dayalı kısa cümleler (bkz. _one_cikan_degisiklikler NEDEN notu) --
+    # hukuki/normatif YORUM İÇERMEZ, biçimlendiriciler (Markdown/HTML) bu
+    # listeyi OLDUĞU GİBİ madde işaretli bir listeye çevirir.
+    one_cikan_degisiklikler: list[str] = field(default_factory=list)
 
 
 def _bolum_adi(section: Section) -> str:
@@ -57,10 +65,35 @@ def _bolum_adi(section: Section) -> str:
     return " > ".join(section.heading_path[:-1])
 
 
-def _en_cok_degisen_bolum(result: ComparisonResult) -> tuple[str, int] | None:
+def _madde_etiketi(section: Section) -> str:
+    """
+    Bir maddeyi Yönetici Özeti'nde İSİMLENDİRMEK için kullanılan KISA
+    etiket -- baslik VARSA doğrudan o (örn. "Veri Paylaşımı"), YOKSA
+    heading_path'in SON elemanı ("MADDE 7" / "GEÇİCİ MADDE 1").
+
+    NEDEN madde_no'dan yeniden inşa ETMİYORUZ ("MADDE {no}" gibi):
+    heading_path zaten GEÇİCİ MADDE/MADDE ayrımını doğru taşır (bkz.
+    structure_parser.py), aynı mantığı burada tekrar yazmak İKİ AYRI
+    yerde aynı biçimlendirmeyi senkron tutma riski doğururdu.
+    """
+    if section.baslik:
+        return section.baslik
+    return section.heading_path[-1] if section.heading_path else "(başlıksız madde)"
+
+
+def _hicbir_sey_degismedi(c: ClassifiedSection) -> bool:
+    """content_type IDENTICAL VE ne numarası ne yeri değişmiş mi -- bkz. _en_cok_degisen_bolumler NEDEN notu."""
+    return c.change_type == ChangeType.IDENTICAL and not c.numarasi_degisti and not c.yeri_degisti
+
+
+def _en_cok_degisen_bolumler(result: ComparisonResult) -> list[tuple[str, int]]:
     """
     GERÇEKTEN bir şeyi değişen (içerik VEYA yapısal) maddeleri bölüme göre
-    sayar, en çok sayıya sahip bölümü döndürür.
+    sayar, EN YÜKSEK sayıya sahip TÜM bölümleri döndürür (bir bölüm/bölümler
+    -- birden fazla bölüm AYNI sayıda değişikliğe sahip olabilir, bu
+    durumda TEK birini rastgele/dict-sıralamasına göre seçmek YANILTICI
+    olurdu -- "en çok değişen bölüm buymuş" izlenimi verirken aslında
+    eşit sayıda değişen başka bölümler de vardır).
 
     NEDEN "değişiklik" burada change_type != IDENTICAL VEYA numarasi_degisti
     VEYA yeri_degisti (SADECE change_type != IDENTICAL DEĞİL): içeriği
@@ -69,19 +102,16 @@ def _en_cok_degisen_bolum(result: ComparisonResult) -> tuple[str, int] | None:
     filtrelemek onu YOK SAYARDI, "bu bölümde hiçbir şey olmadı" yanlış
     izlenimini verirdi.
 
-    NEDEN eşitlikte belgedeki İLK GÖRÜLME SIRASI belirleyici: birden fazla
-    bölüm AYNI sayıda değişikliğe sahipse, rastgele/dict-sıralamasına bağlı
-    bir sonuç yerine DETERMİNİSTİK (her çalıştırmada aynı) bir sonuç
-    gerekir -- testler de buna karşı doğrulanabilsin diye.
+    NEDEN sonuç listesi belgedeki İLK GÖRÜLME SIRASINA göre sıralı:
+    rastgele/dict-sıralamasına bağlı bir sonuç yerine DETERMİNİSTİK (her
+    çalıştırmada aynı) bir sonuç gerekir -- testler de buna karşı
+    doğrulanabilsin diye.
     """
     sayac: dict[str, int] = {}
     ilk_gorulme: dict[str, int] = {}
     for sira, row in enumerate(result.rows):
         c = row.classified
-        hicbir_sey_degismedi = (
-            c.change_type == ChangeType.IDENTICAL and not c.numarasi_degisti and not c.yeri_degisti
-        )
-        if hicbir_sey_degismedi:
+        if _hicbir_sey_degismedi(c):
             continue
         section = c.old or c.new
         bolum = _bolum_adi(section)
@@ -91,9 +121,94 @@ def _en_cok_degisen_bolum(result: ComparisonResult) -> tuple[str, int] | None:
         ilk_gorulme.setdefault(bolum, sira)
 
     if not sayac:
-        return None
-    en_iyi = min(sayac, key=lambda b: (-sayac[b], ilk_gorulme[b]))
-    return en_iyi, sayac[en_iyi]
+        return []
+    en_yuksek = max(sayac.values())
+    kazananlar = [bolum for bolum in sayac if sayac[bolum] == en_yuksek]
+    kazananlar.sort(key=lambda b: ilk_gorulme[b])
+    return [(bolum, en_yuksek) for bolum in kazananlar]
+
+
+def _kategori_ozeti(basliklar: list[str], *, tekil_sablon: str, coklu_ek_sablon: str) -> list[str]:
+    """
+    Bir kategorideki (MODIFIED/ADDED/REMOVED) madde etiketlerini, EN FAZLA
+    SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY tanesi TEK TEK, kalanı (varsa)
+    TOPLU tek bir cümleyle özetler -- NEDEN: bkz. config.py::
+    SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY NEDEN notu (kısalık).
+
+    `tekil_sablon` bir madde etiketi ("{}"), `coklu_ek_sablon` kalan
+    sayıyı ("{}") biçimlendirir -- HER İKİSİ de SADECE ad/sayı yerleştirir,
+    yorum İÇERMEZ.
+    """
+    sinir = SUMMARY_HIGHLIGHT_MAX_ITEMS_PER_CATEGORY
+    satirlar = [tekil_sablon.format(etiket) for etiket in basliklar[:sinir]]
+    kalan = len(basliklar) - sinir
+    if kalan > 0:
+        satirlar.append(coklu_ek_sablon.format(kalan))
+    return satirlar
+
+
+def _one_cikan_degisiklikler(result: ComparisonResult) -> list[str]:
+    """
+    "Öne Çıkan Değişiklikler" -- teknik olmayan bir okuyucu için KISA,
+    SADECE metinsel olarak gözlemlenebilen olgulara dayalı cümle listesi.
+
+    NEDEN "yorum" ÜRETİLMİYOR (bkz. modül başı NEDEN notu -- Mimari İlke
+    C'nin doğal uzantısı): her cümle SABİT bir şablona ("{etiket} maddesi
+    ... tespit edildi/eklendi/bulunmuyor/değişti") madde etiketi veya ham
+    sayı yerleştirir -- "önemli", "riskli", "kapsamlı" gibi bir NİTELEME
+    kelimesi HİÇBİR ŞABLONDA yer almaz; hangi maddenin "öne çıktığı" bir
+    yargı değil, SADECE değişiklik listesinin (MODIFIED/ADDED/REMOVED/
+    RENUMBERED/MOVED) ilk N öğesidir.
+
+    NEDEN sıralama MODIFIED -> REMOVED -> ADDED -> RENUMBERED -> MOVED:
+    her kategori İÇİNDE belge sırası (order_index, bkz. pipeline.py
+    rows.sort) korunur; kategoriler arası sıra SABİTTİR (her çalıştırmada
+    aynı) -- kullanıcı geri bildirimindeki örnekle aynı sırayı izler.
+    """
+    modified: list[str] = []
+    removed: list[str] = []
+    added: list[str] = []
+    for row in result.rows:
+        c = row.classified
+        section = c.old or c.new
+        if c.change_type == ChangeType.MODIFIED:
+            modified.append(_madde_etiketi(section))
+        elif c.change_type == ChangeType.REMOVED:
+            removed.append(_madde_etiketi(section))
+        elif c.change_type == ChangeType.ADDED:
+            added.append(_madde_etiketi(section))
+
+    satirlar: list[str] = []
+    satirlar.extend(
+        _kategori_ozeti(
+            modified,
+            tekil_sablon="{} maddesinde içerik değişikliği tespit edildi.",
+            coklu_ek_sablon="İçeriği değişen {} madde daha var.",
+        )
+    )
+    satirlar.extend(
+        _kategori_ozeti(
+            removed,
+            tekil_sablon="{} maddesi yeni belgede bulunmuyor.",
+            coklu_ek_sablon="Yeni belgede bulunmayan {} madde daha var.",
+        )
+    )
+    satirlar.extend(
+        _kategori_ozeti(
+            added,
+            tekil_sablon="{} maddesi yeni belgede eklendi.",
+            coklu_ek_sablon="Yeni belgede eklenen {} madde daha var.",
+        )
+    )
+
+    renumbered = sum(1 for row in result.rows if row.classified.numarasi_degisti)
+    if renumbered > 0:
+        satirlar.append(f"{renumbered} maddenin numarası değişti.")
+    moved = sum(1 for row in result.rows if row.classified.yeri_degisti)
+    if moved > 0:
+        satirlar.append(f"{moved} maddenin yeri değişti.")
+
+    return satirlar
 
 
 def build_summary_stats(result: ComparisonResult) -> SummaryStats:
@@ -114,7 +229,8 @@ def build_summary_stats(result: ComparisonResult) -> SummaryStats:
         sayilar=sayilar,
         yuzdeler=yuzdeler,
         yapisal_sayilar=result.structural_counts(),
-        en_cok_degisen_bolum=_en_cok_degisen_bolum(result),
+        en_cok_degisen_bolumler=_en_cok_degisen_bolumler(result),
+        one_cikan_degisiklikler=_one_cikan_degisiklikler(result),
     )
 
 
@@ -155,9 +271,19 @@ def render_summary_markdown(stats: SummaryStats) -> str:
         f"{stats.yapisal_sayilar['MOVED']} maddede yeri değişikliği tespit edildi."
     )
 
-    if stats.en_cok_degisen_bolum is not None:
-        bolum, sayi = stats.en_cok_degisen_bolum
+    if stats.en_cok_degisen_bolumler:
+        sayi = stats.en_cok_degisen_bolumler[0][1]
+        bolumler = ", ".join(f"**{bolum}**" for bolum, _ in stats.en_cok_degisen_bolumler)
+        cogul = len(stats.en_cok_degisen_bolumler) > 1
         lines.append("")
-        lines.append(f"En çok değişiklik **{bolum}** bölümünde görüldü ({sayi} madde).")
+        lines.append(
+            f"En çok değişiklik {bolumler} {'bölümlerinde' if cogul else 'bölümünde'} görüldü ({sayi} madde)."
+        )
+
+    if stats.one_cikan_degisiklikler:
+        lines.append("")
+        lines.append("### Öne Çıkan Değişiklikler")
+        for madde in stats.one_cikan_degisiklikler:
+            lines.append(f"- {madde}")
 
     return "\n".join(lines)

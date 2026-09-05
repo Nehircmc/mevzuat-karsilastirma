@@ -261,12 +261,22 @@ def render_summary_html(stats: SummaryStats) -> str:
     )
     parts.append("</ul>")
 
-    if stats.en_cok_degisen_bolum is not None:
-        bolum, sayi = stats.en_cok_degisen_bolum
+    if stats.en_cok_degisen_bolumler:
+        sayi = stats.en_cok_degisen_bolumler[0][1]
+        bolumler = ", ".join(f"<strong>{_escape(bolum)}</strong>" for bolum, _ in stats.en_cok_degisen_bolumler)
+        cogul = len(stats.en_cok_degisen_bolumler) > 1
         parts.append(
-            f"<p>En çok değişiklik <strong>{_escape(bolum)}</strong> "
-            f"bölümünde görüldü ({sayi} madde).</p>"
+            f"<p>En çok değişiklik {bolumler} {'bölümlerinde' if cogul else 'bölümünde'} "
+            f"görüldü ({sayi} madde).</p>"
         )
+
+    if stats.one_cikan_degisiklikler:
+        parts.append("<h3>Öne Çıkan Değişiklikler</h3>")
+        parts.append("<ul>")
+        for madde in stats.one_cikan_degisiklikler:
+            parts.append(f"<li>{_escape(madde)}</li>")
+        parts.append("</ul>")
+
     parts.append("</div>")
     return "\n".join(parts)
 
