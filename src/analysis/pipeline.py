@@ -16,7 +16,8 @@ modülüne bağımlıdır.
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 
 from src.analysis.classifier import ClassifiedSection, classify_content, is_moved, is_renumbered
@@ -112,6 +113,12 @@ def compare_documents(
     new_filename: str,
     *,
     use_embedder: bool = False,
+    old_version_label: str | None = None,
+    old_publication_date: date | None = None,
+    old_effective_date: date | None = None,
+    new_version_label: str | None = None,
+    new_publication_date: date | None = None,
+    new_effective_date: date | None = None,
 ) -> ComparisonResult:
     """
     TAM boru hattı: ingestion -> structure_parser -> match_sections ->
@@ -124,9 +131,43 @@ def compare_documents(
     ClassifiedSection bunu SAKLAMAZ (sadece old/new Section'ları taşır).
     Aynı eşleşme üzerinde iki AYRI geçiş yapıp sonra eşleştirmeye çalışmak
     yerine, TEK geçişte hem sınıflandırma hem diff üretilir.
+
+    old_version_label/old_publication_date/old_effective_date (ve new_*)
+    Mimari Ek 1 (F1)'in OPSİYONEL girdileridir -- hiçbiri verilmezse
+    davranış AYNEN eskisi gibi kalır (geriye dönük uyumlu). NEDEN slot
+    HER ZAMAN "A"/"B" olarak atanır (bu parametreler boş olsa BİLE):
+    slot kullanıcının YÜKLEME sırasına bağlıdır, sürüm etiketi/tarih
+    girilip girilmediğinden BAĞIMSIZDIR (bkz. src/temporal.py::
+    belge_gorunen_adi) -- bu sayede görünen ad HER ZAMAN "Belge A/B"
+    önekini taşır, en kötü ihtimalle dosya adına düşer.
+
+    NEDEN source_path BURADA da (old_filename/new_filename ile) ÜZERİNE
+    YAZILIYOR: _load_document, DocumentMeta.source_path'i loader'a verilen
+    GEÇİCİ dosya yoluna (`/tmp/tmpXXXXXX.pdf`) göre doldurur -- bu,
+    belge_gorunen_adi'nin F3 kademe-3 düşüşünde (sürüm etiketi/tarih
+    YOKSA dosya adına düşülür) kullanıcıya ANLAMSIZ bir geçici dosya adı
+    göstermesine yol açardı. Gerçek yükleme adı (old_filename/new_filename)
+    burada tekrar yazılarak görünen ad HER ZAMAN kullanıcının yüklediği
+    dosyanın adını taşır.
     """
     old_doc = _load_document(old_bytes, old_filename, doc_id="eski")
     new_doc = _load_document(new_bytes, new_filename, doc_id="yeni")
+    old_doc.meta = replace(
+        old_doc.meta,
+        source_path=old_filename,
+        slot="A",
+        version_label=old_version_label,
+        publication_date=old_publication_date,
+        effective_date=old_effective_date,
+    )
+    new_doc.meta = replace(
+        new_doc.meta,
+        source_path=new_filename,
+        slot="B",
+        version_label=new_version_label,
+        publication_date=new_publication_date,
+        effective_date=new_effective_date,
+    )
 
     old_sections = parse_structure(old_doc)
     new_sections = parse_structure(new_doc)

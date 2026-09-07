@@ -1,0 +1,18 @@
+{
+  "kaynak": "data/samples/manifest.json",
+  "aciklama": "Mimari Ek 1 (F1/F2) için sürüm üstverisi -- her sürüm için version_label, publication_date (yayım), effective_date (yürürlük) ve source_path. İki tarih KASTEN farklı verilmiştir (2019 sürümünde yayım ile yürürlük arasında ~1.5 ay, 2023 sürümünde ~3 ay fark var) -- bu, F2'nin 'iki tarih ayrı alanlarda tutulur, tek alanda birleştirilmez' kuralının test verisidir.",
+  "surumler": {
+    "2019": {
+      "version_label": "2019 sürümü",
+      "publication_date": "2019-11-14",
+      "effective_date": "2020-01-01",
+      "source_path": "data/samples/yonetmelik_2019.pdf"
+    },
+    "2023": {
+      "version_label": "2023 sürümü",
+      "publication_date": "2023-06-01",
+      "effective_date": "2023-09-01",
+      "source_path": "data/samples/yonetmelik_2023.pdf"
+    }
+  }
+}

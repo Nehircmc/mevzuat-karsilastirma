@@ -237,3 +237,76 @@ CHANGE_TYPE_LABELS_TR = {
     "MOVED": "Bölümü Değişti",
     "RENUMBERED": "Numarası Değişti",
 }
+
+# --------------------------------------------------------------------------
+# MİMARİ EK 1 / F5 -- CÜMLE ŞABLONLARI (belge kimliği + sürüm içeren)
+# --------------------------------------------------------------------------
+# NEDEN burada (analysis/reporting katmanında DEĞİL): Mimari İlke C'nin
+# (kapalı sözlük/"yorum yok") doğal uzantısı -- analiz katmanı hiçbir zaman
+# kendi cümlesini SERBESTÇE kurmaz, sadece bu SABİT şablonları placeholder
+# yerleştirerek doldurur (bkz. src/temporal.py::kaynak_atifi,
+# src/reporting/summary_builder.py'deki aynı ilke).
+#
+# TÜRKÇE EK UYUMU (F5'in istediği karar + gerekçe): "Belge A (2019 sürümü)"
+# gibi parantezle biten bir görünen ada doğrudan ünlü uyumuna duyarlı bir
+# ek ("'ndeki", "'nde") eklemek YANLIŞ ek üretebilir -- ek, parantez İÇİNDEKİ
+# son sesli harfe mi ("sürümü" -> ince/ü) yoksa parantezden ÖNCEKİ harfe mi
+# ("A" -> kalın/a, ama "B" -> ince/e) göre uyacak, bunu genel biçimde
+# hesaplamak (TDK kuralı: ek, okunuşça parantezden ÖNCEKİ sözcüğe göre
+# belirlenir) belge adı serbest metin (örn. dosya adı, kullanıcı etiketi)
+# olabildiği için GÜVENİLİR biçimde otomatikleştirilemez. Bu yüzden ekleri
+# doğru üreten bir yardımcı YAZMAK YERİNE şablonlar EKSİZ kuruldu: belge adı
+# hep sabit bir ARA SÖZCÜKLE ("içinde") takip ediliyor, ek doğrudan
+# parantezli ada YAPIŞMIYOR. "içinde" bir ilgeç (postposition) olduğu için
+# önündeki ada ünlü uyumlu bir ek gerektirmez.
+TEMPLATE_REMOVED = (
+    "{madde} maddesi {belge_a} içinde yer almaktadır, {belge_b} içinde "
+    "yer almamaktadır."
+)
+TEMPLATE_ADDED = "{madde} maddesi yalnızca {belge_b} içinde bulunmaktadır."
+TEMPLATE_MODIFIED = (
+    "{madde} maddesinde, {belge_a} içindeki '{eski_ifade}' ifadesi "
+    "{belge_b} içinde '{yeni_ifade}' olarak değişmiştir."
+)
+TEMPLATE_RENUMBERED = (
+    "{eski_madde} maddesi {belge_a} içinde, {yeni_madde} maddesi olarak "
+    "{belge_b} içinde yer almaktadır; metni aynı kalmıştır."
+)
+TEMPLATE_IDENTICAL = "{madde} maddesinin metni her iki belgede de aynıdır."
+
+CHANGE_TYPE_SENTENCE_TEMPLATES = {
+    "REMOVED": TEMPLATE_REMOVED,
+    "ADDED": TEMPLATE_ADDED,
+    "MODIFIED": TEMPLATE_MODIFIED,
+    "RENUMBERED": TEMPLATE_RENUMBERED,
+    "IDENTICAL": TEMPLATE_IDENTICAL,
+}
+
+# --------------------------------------------------------------------------
+# MİMARİ EK 1 / F6 -- DİL SINIRI: HUKUKÎ FİİL KULLANILMAZ
+# --------------------------------------------------------------------------
+# NEDEN: görevdeki "sistem hukukî yorum yapmamalıdır" ilkesinin koda dönüşmüş
+# hâli. Bir ifadenin metinden ÇIKARILMIŞ olması METİNSEL bir olgudur; bir
+# hükmün YÜRÜRLÜKTEN KALKMIŞ olması HUKUKÎ bir SONUÇTUR ve bunu söylemek
+# (örn. iki metin farklı OLDUĞU için otomatik "mülga edilmiştir" çıkarımı)
+# uzmanın işidir, bu sistemin değil -- iki liste de tests/test_temporal.py
+# tarafından TÜM şablonların taranmasıyla doğrulanır (YASAK listesinden
+# hiçbir kelime hiçbir şablonda geçmemeli).
+IZINLI_METINSEL_OLGU_IFADELERI = [
+    "eklenmiştir",
+    "çıkarılmıştır",
+    "yer almamaktadır",
+    "ifadesi değişmiştir",
+    "madde numarası değişmiştir",
+    "metni aynı kalmıştır",
+    "bulunmaktadır",
+]
+
+YASAK_HUKUKI_SONUC_IFADELERI = [
+    "yürürlükten kaldırılmıştır",
+    "mülga edilmiştir",
+    "yükümlülük getirmiştir",
+    "kapsam genişletilmiştir",
+    "serbest bırakılmıştır",
+    "zorunlu hâle gelmiştir",
+]

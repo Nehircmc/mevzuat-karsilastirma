@@ -13,6 +13,7 @@ src/ui/styles.py + src/ui/components.py + app.py (Adım 6) testleri.
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -21,7 +22,13 @@ from src.config import ASSETS_DIR, BASE_DIR, COLOR_PALETTE, SAMPLES_DIR, SOURCE_
 from src.ingestion.base import CorruptDocumentError
 from src.models import ChangeType, Section, TextUnit
 from src.ui import styles
-from src.ui.components import ComparisonResult, build_pdf_source_payload, compare_documents, render_source_link
+from src.ui.components import (
+    ComparisonResult,
+    build_pdf_source_payload,
+    check_chronological_order,
+    compare_documents,
+    render_source_link,
+)
 
 _APP_PATH = BASE_DIR / "app.py"
 
@@ -583,3 +590,127 @@ class TestAppUctanUcaDumanTesti:
         warnings = [w.value for w in at.get("warning")]
         assert any("MADDE" in w for w in warnings)
         assert not at.get("metric")  # metrik kartları hiç render edilmemeli
+
+
+class TestCheckChronologicalOrder:
+    """
+    Mimari Ek 1 (F2): check_chronological_order -- app.py'nin onay
+    mekanizmasının dayandığı SAF karar fonksiyonu. Streamlit'e bağımlı
+    DEĞİLDİR (bkz. components.py::check_chronological_order NEDEN notu).
+    """
+
+    @staticmethod
+    def _bos_meta_input() -> dict:
+        return {"version_label": None, "publication_date": None, "effective_date": None}
+
+    def test_tarih_girilmemisse_surtunmesiz_devam_edilir(self):
+        proceed, warning = check_chronological_order(
+            "eski.pdf", "yeni.pdf", self._bos_meta_input(), self._bos_meta_input()
+        )
+        assert proceed is True
+        assert warning is None
+
+    def test_tarihler_yukleme_sirasiyla_tutarliysa_surtunmesiz_devam_edilir(self):
+        old_input = {**self._bos_meta_input(), "effective_date": date(2020, 1, 1)}
+        new_input = {**self._bos_meta_input(), "effective_date": date(2023, 9, 1)}
+        proceed, warning = check_chronological_order("eski.pdf", "yeni.pdf", old_input, new_input)
+        assert proceed is True
+        assert warning is None
+
+    def test_tarihler_yukleme_sirasiyla_celisiyorsa_onay_istenir(self):
+        # NEDEN: kullanıcı "Eski belge" slotuna DAHA YENİ tarihli bir belge
+        # yüklemiş -- F2'nin "sessiz varsayımın en pahalı olduğu yer burası"
+        # NEDEN notunun tam karşılığı, analiz BAŞLAMADAN önce yakalanmalı.
+        old_input = {**self._bos_meta_input(), "effective_date": date(2023, 9, 1)}
+        new_input = {**self._bos_meta_input(), "effective_date": date(2020, 1, 1)}
+        proceed, warning = check_chronological_order("eski.pdf", "yeni.pdf", old_input, new_input)
+        assert proceed is False
+        assert warning is not None
+
+    def test_yayim_ve_yururluk_tarihleri_kendi_aralarinda_celisiyorsa_onay_istenir(self):
+        old_input = {
+            "version_label": None,
+            "publication_date": date(2019, 1, 1),
+            "effective_date": date(2024, 1, 1),
+        }
+        new_input = {
+            "version_label": None,
+            "publication_date": date(2020, 1, 1),
+            "effective_date": date(2021, 1, 1),
+        }
+        proceed, warning = check_chronological_order("eski.pdf", "yeni.pdf", old_input, new_input)
+        assert proceed is False
+        assert warning is not None
+
+
+class TestMimariEk1AppEntegrasyonu:
+    """
+    F3/F4/F2'nin app.py'ye GERÇEKTEN bağlandığını streamlit.testing.v1.
+    AppTest ile uçtan uca doğrular -- izole components/temporal testlerinin
+    ÖTESİNDE, kullanıcının tarayıcıda GERÇEKTEN göreceği metni kontrol eder.
+    """
+
+    def test_tarih_girilmeden_karsilastirma_yonu_dosya_adiyla_gorunur(self):
+        # NEDEN bu test ÖNEMLİ: kullanıcı HİÇBİR sürüm/tarih bilgisi
+        # girmese bile F3'ün kademe-3 düşüşü (dosya adı) sayesinde yön
+        # satırı HER ZAMAN görünür -- "hiçbir şey değişmemiş" izlenimini
+        # önler.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        captions = [c.value for c in at.get("caption")]
+        assert any(
+            "Karşılaştırma yönü: Belge A (yonetmelik_2019.pdf) → Belge B (yonetmelik_2023.pdf)" == c
+            for c in captions
+        )
+
+    def test_surum_etiketi_girilince_karsilastirma_yonunde_gorunur(self):
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        at.text_input(key="mk_old_version_label").set_value("2019 sürümü")
+        at.text_input(key="mk_new_version_label").set_value("2023 sürümü")
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        captions = [c.value for c in at.get("caption")]
+        assert any(
+            "Karşılaştırma yönü: Belge A (2019 sürümü) → Belge B (2023 sürümü)" == c for c in captions
+        )
+
+    def test_celisen_tarihte_onay_verilmeden_analiz_baslamaz(self):
+        # NEDEN kritik: F2'nin onay mekanizmasının GERÇEKTEN app.py'de
+        # ÇALIŞTIĞININ kanıtı -- "Eski belge" slotuna kasıtlı olarak DAHA
+        # YENİ bir yürürlük tarihi girildiğinde, kullanıcı checkbox'ı
+        # İŞARETLEMEDEN sonuçlar (metrik kartları) GÖRÜNMEMELİ.
+        at = AppTest.from_file(str(_APP_PATH))
+        at.run(timeout=30)
+
+        at.date_input(key="mk_old_effective_date").set_value(date(2023, 9, 1))
+        at.date_input(key="mk_new_effective_date").set_value(date(2020, 1, 1))
+        old_bytes = (SAMPLES_DIR / "yonetmelik_2019.pdf").read_bytes()
+        new_bytes = (SAMPLES_DIR / "yonetmelik_2023.pdf").read_bytes()
+        at.file_uploader(key="mk_old_uploader").upload("yonetmelik_2019.pdf", old_bytes, "application/pdf")
+        at.file_uploader(key="mk_new_uploader").upload("yonetmelik_2023.pdf", new_bytes, "application/pdf")
+        at.run(timeout=60)
+
+        assert not at.exception
+        assert any("Lütfen tarihleri ya da yükleme sırasını kontrol edin" in w.value for w in at.get("warning"))
+        assert not at.get("metric")  # analiz BAŞLAMAMIŞ olmalı
+
+        at.checkbox(key="mk_order_override_confirm").set_value(True)
+        at.run(timeout=60)
+
+        assert not at.exception
+        assert at.get("metric")  # onaydan SONRA analiz çalışır

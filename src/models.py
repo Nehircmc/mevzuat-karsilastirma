@@ -7,6 +7,7 @@ reporting) ORTAK dili; hiçbir katman "düz string" ile çalışmaz.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 
 
@@ -90,7 +91,18 @@ class TextUnit:
 
 @dataclass(frozen=True)
 class DocumentMeta:
-    """Belge düzeyinde kimlik/köken bilgisi -- TextUnit.doc_id bu meta'ya işaret eder."""
+    """
+    Belge düzeyinde kimlik/köken bilgisi -- TextUnit.doc_id bu meta'ya işaret eder.
+
+    slot/version_label/publication_date/effective_date alanları Mimari Ek 1
+    (F1)'in gereğidir -- bkz. src/temporal.py modül NEDEN notu. NEDEN
+    publication_date ile effective_date AYRI alanlar (TEK bir "tarih"
+    alanında birleştirilmiyor): mevzuatta bu ikisi ÇAKIŞMAZ -- Aralık
+    2024'te yayımlanıp Nisan 2025'te yürürlüğe giren bir yönetmelik
+    olağandır, ve "bu madde 2024'te ne diyordu" sorusunun cevabı HANGİ
+    tarihe bakıldığına göre değişir (bkz. src/temporal.py::determine_
+    chronological_order NEDEN notu).
+    """
 
     doc_id: str
     source_path: str
@@ -100,6 +112,22 @@ class DocumentMeta:
     # GÜVENİLİR şekilde bilinemez (render motoruna bağlıdır); bu yüzden
     # opsiyonel tutuluyor, uydurulmuyor.
     page_count: int | None = None
+    # NEDEN "A"/"B" (kullanıcının yükleme SIRASI) ayrı bir alan: bu, F2'nin
+    # ürettiği ESKİ/YENİ (kronolojik) sırayla KARIŞTIRILMAMALI -- kullanıcı
+    # YENİ belgeyi "A" slotuna yükleyebilir; slot sabit bir yükleme kimliği,
+    # older/newer ise F2'nin (tarihe dayalı) sonucudur.
+    slot: str | None = None  # "A" | "B"
+    version_label: str | None = None  # örn. "2019 sürümü"
+    publication_date: date | None = None
+    effective_date: date | None = None
+
+    def __post_init__(self) -> None:
+        # NEDEN: slot kapalı bir kümedir ("A"/"B" dışında bir değer, F3/F7'nin
+        # ürettiği "Belge {slot}" görünen adını anlamsızlaştırır) -- sessizce
+        # kabul etmek yerine hemen patlar (bkz. TextUnit.__post_init__ ile
+        # aynı ilke).
+        if self.slot is not None and self.slot not in ("A", "B"):
+            raise ValueError(f"DocumentMeta: slot 'A' ya da 'B' olmalı, geçersiz: {self.slot!r}")
 
 
 @dataclass

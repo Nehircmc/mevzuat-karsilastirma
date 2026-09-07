@@ -8,6 +8,7 @@ regresyonlar için.
 
 from __future__ import annotations
 
+from datetime import date
 from io import BytesIO
 
 import docx as docx_lib
@@ -83,3 +84,47 @@ class TestClassifyContentDiffTutarliligi:
 
         assert len(result.rows) == 1
         assert result.rows[0].classified.change_type == ChangeType.IDENTICAL
+
+
+class TestMimariEk1MetaAktarimi:
+    """
+    Mimari Ek 1 (F1): compare_documents artık OPSİYONEL sürüm/tarih
+    parametrelerini kabul edip old_meta/new_meta'ya (bkz. src/models.py::
+    DocumentMeta) aktarıyor mu -- bu, F3/F4/F7'nin (belge_gorunen_adi,
+    kaynak_atifi, render_comparison_direction) dayandığı verinin GERÇEKTEN
+    boru hattından geçtiğini doğrular.
+    """
+
+    def test_parametre_verilmezse_slot_yine_de_atanir_digerleri_none(self):
+        # NEDEN slot HER ZAMAN atanır: bkz. pipeline.py::compare_documents
+        # NEDEN notu -- slot yükleme sırasına bağlıdır, tarih/etiket
+        # girilip girilmediğinden BAĞIMSIZDIR.
+        same_bytes = _build_docx_bytes(degistir=False)
+        result = compare_documents(same_bytes, "eski.docx", same_bytes, "yeni.docx")
+
+        assert result.old_meta.slot == "A"
+        assert result.new_meta.slot == "B"
+        assert result.old_meta.version_label is None
+        assert result.old_meta.publication_date is None
+        assert result.old_meta.effective_date is None
+
+    def test_surum_ve_tarih_parametreleri_ilgili_meta_ya_aktarilir(self):
+        same_bytes = _build_docx_bytes(degistir=False)
+        result = compare_documents(
+            same_bytes,
+            "eski.docx",
+            same_bytes,
+            "yeni.docx",
+            old_version_label="2019 sürümü",
+            old_publication_date=date(2019, 11, 14),
+            old_effective_date=date(2020, 1, 1),
+            new_version_label="2023 sürümü",
+            new_publication_date=date(2023, 6, 1),
+            new_effective_date=date(2023, 9, 1),
+        )
+
+        assert result.old_meta.version_label == "2019 sürümü"
+        assert result.old_meta.publication_date == date(2019, 11, 14)
+        assert result.old_meta.effective_date == date(2020, 1, 1)
+        assert result.new_meta.version_label == "2023 sürümü"
+        assert result.new_meta.effective_date == date(2023, 9, 1)
