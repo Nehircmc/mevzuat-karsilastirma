@@ -28,6 +28,30 @@ def _kisaltma_mi(kelime: str) -> bool:
     return kelime in _KISALTMA_KUMESI or bool(_TEK_HARF_KISALTMA_RE.match(kelime))
 
 
+def _rakamli_tarih_noktasi_mi(text: str, punct_start: int, punct_end: int) -> bool:
+    """
+    "14.11.2019" gibi BOŞLUKSUZ rakam.rakam örüntüsündeki bir noktayı cümle
+    sonu SAYMAMAK için: nokta HEM hemen ÖNCESİNDE HEM hemen SONRASINDA
+    (boşluksuz) bir rakam varsa True döner.
+
+    NEDEN "Madde 5. Başvurular..." gibi TEK taraflı bir rakam-nokta
+    durumundan (madde numarası + gerçek cümle sonu) AYIRT EDİLİYOR: orada
+    noktadan SONRA bir rakam DEĞİL boşluk+harf gelir -- `after` kontrolü
+    bunu elemeye yeter, `before` kontrolü TEK BAŞINA YETERSİZ olurdu
+    (bkz. çağıran yerdeki NEDEN notu).
+
+    NEDEN `word` (kısaltma kontrolünün kullandığı, en yakın boşluğa kadar
+    geri giden token) DEĞİL sadece BİTİŞİK tek karakterlere bakılıyor:
+    "14.11.2019" içindeki İKİNCİ nokta işlenirken `_kelime_baslangicini_bul`
+    boşluk bulana kadar GERİYE "14.11" boyunca yürür (aradaki nokta
+    boşluk SAYILMAZ) -- bu, saf "rakam mı" kontrolünü nokta içerdiği için
+    BOZAR. Doğrudan bitişik karaktere bakmak bu sorunu YOK SAYAR.
+    """
+    before_ok = punct_start > 0 and text[punct_start - 1].isdigit()
+    after_ok = punct_end < len(text) and text[punct_end].isdigit()
+    return before_ok and after_ok
+
+
 def _birim_uret(unit: TextUnit, local_start: int, local_end: int) -> TextUnit:
     return TextUnit(
         doc_id=unit.doc_id,
@@ -66,6 +90,10 @@ def find_sentence_spans(text: str) -> list[tuple[int, int]]:
 
     for match in _CUMLE_SONU_RE.finditer(text):
         punct_end = match.end()
+
+        if _rakamli_tarih_noktasi_mi(text, match.start(), punct_end):
+            continue
+
         word_start = _kelime_baslangicini_bul(text, match.start())
         word = text[word_start:punct_end]
 

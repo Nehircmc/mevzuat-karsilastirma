@@ -1,5 +1,5 @@
 """
-Mimari Ek 1 testleri -- F2 (kronolojik sıra + onay), F3 (görünen ad),
+Mimari Ek 1 testleri -- F2 (tarih tahmini), F3 (görünen ad),
 F6 (yasak hukukî fiil taraması).
 
 NEDEN her ChangeType şablonunun TARANMASI (TestYasakHukukiFiiller): F6'nın
@@ -20,16 +20,10 @@ from src.config import (
 )
 from src.models import DocumentMeta
 from src.temporal import (
-    ConfirmedOrder,
-    OrderConfidence,
-    OrderNotConfirmedError,
     belge_gorunen_adi,
-    confirm_order,
-    determine_chronological_order,
     guess_date_from_filename,
     guess_date_from_metadata,
     kaynak_atifi,
-    require_confirmed_order,
     suggest_publication_date,
 )
 
@@ -38,76 +32,6 @@ def _meta(**kwargs) -> DocumentMeta:
     base = {"doc_id": "d", "source_path": "x.pdf", "file_type": "pdf"}
     base.update(kwargs)
     return DocumentMeta(**base)
-
-
-# --------------------------------------------------------------------------
-# F2 -- determine_chronological_order
-# --------------------------------------------------------------------------
-
-
-class TestKronolojikSira:
-    def test_effective_date_e_gore_dogru_siralama(self):
-        eski = _meta(doc_id="a", effective_date=date(2020, 1, 1))
-        yeni = _meta(doc_id="b", effective_date=date(2023, 9, 1))
-
-        sonuc = determine_chronological_order(yeni, eski)  # kasıtlı ters sıra
-
-        assert sonuc.confidence == OrderConfidence.EFFECTIVE_DATE
-        assert sonuc.older.doc_id == "a"
-        assert sonuc.newer.doc_id == "b"
-        assert sonuc.warning is None
-
-    def test_effective_date_eksikken_publication_date_e_dusme(self):
-        eski = _meta(doc_id="a", publication_date=date(2019, 11, 14))
-        yeni = _meta(doc_id="b", publication_date=date(2023, 6, 1))
-
-        sonuc = determine_chronological_order(eski, yeni)
-
-        assert sonuc.confidence == OrderConfidence.PUBLICATION_DATE
-        assert sonuc.older.doc_id == "a"
-        assert sonuc.newer.doc_id == "b"
-
-    def test_effective_date_esitse_publication_date_e_dusme(self):
-        # NEDEN: effective_date AYIRT EDİCİ değilse (iki belge de aynı gün
-        # yürürlüğe girmişse) bu, F2'nin "yoksa publication_date'e düş"
-        # kuralının bir uzantısıdır -- ayırt edici olmayan bir eşitlik de
-        # "yok" ile aynı muameleyi görmeli.
-        ortak_yururluk = date(2024, 1, 1)
-        eski = _meta(
-            doc_id="a", effective_date=ortak_yururluk, publication_date=date(2023, 1, 1)
-        )
-        yeni = _meta(
-            doc_id="b", effective_date=ortak_yururluk, publication_date=date(2023, 6, 1)
-        )
-
-        sonuc = determine_chronological_order(eski, yeni)
-
-        assert sonuc.confidence == OrderConfidence.PUBLICATION_DATE
-        assert sonuc.older.doc_id == "a"
-        assert sonuc.newer.doc_id == "b"
-
-    def test_celisen_sira_uyari_uretir(self):
-        # a: yayımda ÖNCE ama yürürlükte SONRA -- çelişki.
-        a = _meta(doc_id="a", publication_date=date(2019, 1, 1), effective_date=date(2024, 1, 1))
-        b = _meta(doc_id="b", publication_date=date(2020, 1, 1), effective_date=date(2021, 1, 1))
-
-        sonuc = determine_chronological_order(a, b)
-
-        assert sonuc.confidence == OrderConfidence.CONFLICTING
-        assert sonuc.older is None
-        assert sonuc.newer is None
-        assert sonuc.warning is not None
-
-    def test_tarih_yokken_varsayim_yapilmaz(self):
-        a = _meta(doc_id="a")
-        b = _meta(doc_id="b")
-
-        sonuc = determine_chronological_order(a, b)
-
-        assert sonuc.confidence == OrderConfidence.UNKNOWN
-        assert sonuc.older is None
-        assert sonuc.newer is None
-        assert sonuc.warning is not None
 
 
 # --------------------------------------------------------------------------
@@ -137,30 +61,6 @@ class TestTarihTahmini:
         oneri = suggest_publication_date("yonetmelik_2019.pdf")
         assert oneri.suggested_date == date(2019, 1, 1)
         assert oneri.source == "filename"
-
-
-# --------------------------------------------------------------------------
-# F2 -- onay mekanizması (tahminden ayrı)
-# --------------------------------------------------------------------------
-
-
-class TestOnayMekanizmasi:
-    def test_onaysiz_siparisle_analiz_baslamaz(self):
-        with pytest.raises(OrderNotConfirmedError):
-            require_confirmed_order(None)
-
-    def test_onaylanmis_sira_kabul_edilir(self):
-        a = _meta(doc_id="a")
-        b = _meta(doc_id="b")
-        onay = confirm_order(older=a, newer=b)
-
-        assert isinstance(onay, ConfirmedOrder)
-        assert require_confirmed_order(onay) is onay
-
-    def test_ayni_belge_older_newer_olamaz(self):
-        a = _meta(doc_id="a")
-        with pytest.raises(ValueError):
-            confirm_order(older=a, newer=a)
 
 
 # --------------------------------------------------------------------------

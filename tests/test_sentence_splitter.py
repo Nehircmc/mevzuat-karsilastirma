@@ -50,6 +50,48 @@ class TestKisaltmalar:
         assert sentences[0].text == "A. Bölümü ilgilendiren madde budur."
 
 
+class TestRakamliTarihNoktasi:
+    """
+    Tarihsel/sayısal değişiklik tespiti özelliği için eklendi (görev
+    geçmişi): "14.11.2019" gibi BOŞLUKSUZ rakam.rakam örüntüleri cümle
+    sonu SAYILMAMALI -- aksi halde find_temporal_expressions'ın gördüğü
+    her cümle parçası tarihi PARÇALANMIŞ hâlde alır ve hiçbir tarih
+    ifadesi TANINAMAZ.
+    """
+
+    def test_nokta_ayracli_tam_tarih_bolunmez(self):
+        metin = "Yönetmelik 14.11.2019 tarihinde yürürlüğe girer."
+        sentences = split_sentences(_unit(metin))
+        assert len(sentences) == 1
+        assert sentences[0].text == metin
+
+    def test_iki_ayri_tarih_iceren_metin_doğru_bolunur(self):
+        metin = "Sözleşme 1.1.2018 tarihinde başlar. Bitiş 31.12.2020 olarak belirlenmiştir."
+        sentences = split_sentences(_unit(metin))
+        assert len(sentences) == 2
+        assert sentences[0].text == "Sözleşme 1.1.2018 tarihinde başlar."
+        assert sentences[1].text == "Bitiş 31.12.2020 olarak belirlenmiştir."
+
+    def test_binlik_ayrac_da_bolunmez(self):
+        # NEDEN aynı kural: "5.000" da rakam.rakam örüntüsü -- yan etki
+        # olarak TR binlik ayracını da korur, bu YANLIŞ bir davranış değil.
+        metin = "Toplam tutar 5.000 TL olarak belirlenmiştir. Ödeme yapılır."
+        sentences = split_sentences(_unit(metin))
+        assert len(sentences) == 2
+        assert sentences[0].text == "Toplam tutar 5.000 TL olarak belirlenmiştir."
+
+    def test_madde_numarasindan_sonraki_gercek_cumle_sonu_hala_bolunur(self):
+        # NEDEN kritik: madde numarası ("Madde 5.") TEK taraflı bir
+        # rakam-nokta durumudur -- noktadan SONRA rakam DEĞİL boşluk+büyük
+        # harf gelir, bu yüzden YİNE cümle sonu sayılmalı (bkz.
+        # _rakamli_tarih_noktasi_mi NEDEN notu).
+        metin = "Madde 5. Başvurular değerlendirilir."
+        sentences = split_sentences(_unit(metin))
+        assert len(sentences) == 2
+        assert sentences[0].text == "Madde 5."
+        assert sentences[1].text == "Başvurular değerlendirilir."
+
+
 class TestFikraListesi:
     def test_yari_noktali_virgullu_liste_tek_cumle_kalir(self):
         text = (

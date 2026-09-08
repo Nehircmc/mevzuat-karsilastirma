@@ -16,7 +16,7 @@ modülüne bağımlıdır.
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -24,6 +24,7 @@ from src.analysis.classifier import ClassifiedSection, classify_content, is_move
 from src.analysis.differ import SectionDiff, diff_section_match
 from src.analysis.embedder import Embedder
 from src.analysis.section_matcher import match_sections
+from src.analysis.temporal_diff import TemporalChange, diff_temporal_expressions
 from src.ingestion.base import CorruptDocumentError, NoTextLayerError
 from src.ingestion.factory import get_loader
 from src.models import ChangeType, Document, DocumentMeta
@@ -43,6 +44,15 @@ class ComparisonResult:
     old_meta: DocumentMeta
     new_meta: DocumentMeta
     rows: list[ComparisonRow]
+    # NEDEN AYRI bir liste (rows'un İÇİNE gömülmüyor): "içerik durumu"
+    # (ChangeType) ile "yapısal bayraklar" (numarasi_degisti/yeri_degisti)
+    # İLE AYNI ilke -- tarihsel/sayısal değişiklik ÜÇÜNCÜ BAĞIMSIZ bir
+    # boyuttur, bir madde HEM MODIFIED HEM içinde bir tarih değişmiş
+    # olabilir (bkz. src/analysis/temporal_diff.py modül NEDEN notu).
+    # Sadece EŞLEŞEN madde çiftleri için anlamlıdır (REMOVED/ADDED
+    # satırlarda "değişim" kavramı YOKTUR), bu yüzden rows değil ayrı bir
+    # liste.
+    temporal_changes: list[TemporalChange] = field(default_factory=list)
 
     def counts(self) -> dict[ChangeType, int]:
         """
@@ -123,7 +133,7 @@ def compare_documents(
     """
     TAM boru hattı: ingestion -> structure_parser -> match_sections ->
     (her eşleşen çift için) classify_content/is_renumbered/is_moved +
-    diff_section_match.
+    diff_section_match + diff_temporal_expressions.
 
     NEDEN classify_all() (classifier.py) yerine bu üçü döngü içinde
     çağrılıyor: diff_section_match() de AYNI SectionMatch nesnesine
@@ -176,8 +186,10 @@ def compare_documents(
     match_result = match_sections(old_sections, new_sections, embedder=embedder)
 
     rows: list[ComparisonRow] = []
+    temporal_changes: list[TemporalChange] = []
     for m in match_result.matches:
         section_diff = diff_section_match(m)
+        temporal_changes.extend(diff_temporal_expressions(section_diff))
         change_type = classify_content(m)
         # NEDEN classify_content()'in IDENTICAL kararı BURADA section_diff'e
         # KARŞI doğrulanıyor (kalite kontrolünde bulundu): classify_content
@@ -235,4 +247,6 @@ def compare_documents(
     # MAKUL bir varsayılan sunuyor.
     rows.sort(key=lambda r: r.classified.old.order_index if r.classified.old else r.classified.new.order_index)
 
-    return ComparisonResult(old_meta=old_doc.meta, new_meta=new_doc.meta, rows=rows)
+    return ComparisonResult(
+        old_meta=old_doc.meta, new_meta=new_doc.meta, rows=rows, temporal_changes=temporal_changes
+    )

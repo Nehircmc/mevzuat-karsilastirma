@@ -17,6 +17,15 @@ from src.analysis.pipeline import compare_documents
 from src.models import ChangeType
 
 
+def _build_madde_docx_bytes(text: str) -> bytes:
+    """TEK bir MADDE 1 içeren minimal bir DOCX üretir (verilen gövde metniyle)."""
+    document = docx_lib.Document()
+    document.add_paragraph(f"MADDE 1- {text}")
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 def _build_docx_bytes(*, degistir: bool) -> bytes:
     """
     TEK bir çok uzun (~60 fıkralı) madde içeren minimal bir DOCX üretir --
@@ -128,3 +137,32 @@ class TestMimariEk1MetaAktarimi:
         assert result.old_meta.effective_date == date(2020, 1, 1)
         assert result.new_meta.version_label == "2023 sürümü"
         assert result.new_meta.effective_date == date(2023, 9, 1)
+
+
+class TestTemporalChangesEntegrasyonu:
+    """
+    ComparisonResult.temporal_changes'in GERÇEK bir DOCX boru hattından
+    (ingestion -> structure_parser -> match_sections -> diff_section_match
+    -> diff_temporal_expressions) uçtan uca DOĞRU DOLDUĞUNU doğrular --
+    ayrıntılı eşleştirme/güven eşiği mantığı tests/test_temporal_diff.py'de
+    zaten kapsanıyor, burada SADECE pipeline.py bağlantısı test edilir.
+    """
+
+    def test_sure_degisikligi_pipeline_uzerinden_tespit_edilir(self):
+        old_bytes = _build_madde_docx_bytes("Başvurular 30 gün içinde değerlendirilir.")
+        new_bytes = _build_madde_docx_bytes("Başvurular 45 gün içinde değerlendirilir.")
+
+        result = compare_documents(old_bytes, "eski.docx", new_bytes, "yeni.docx")
+
+        assert len(result.temporal_changes) == 1
+        change = result.temporal_changes[0]
+        assert change.paired is True
+        assert change.old.text == "30 gün"
+        assert change.new.text == "45 gün"
+
+    def test_degisiklik_yoksa_bos_liste(self):
+        same_bytes = _build_madde_docx_bytes("Bu maddenin amacı düzenleme yapmaktır.")
+
+        result = compare_documents(same_bytes, "eski.docx", same_bytes, "yeni.docx")
+
+        assert result.temporal_changes == []

@@ -28,7 +28,6 @@ st.caption(
 )
 
 old_file, new_file = components.render_upload_widgets()
-old_meta_input, new_meta_input = components.render_version_metadata_widgets()
 
 use_embedder = st.checkbox(
     "Gelişmiş (embedding tabanlı) eşleştirmeyi etkinleştir",
@@ -44,23 +43,6 @@ use_embedder = st.checkbox(
 if old_file is None or new_file is None:
     st.info("Karşılaştırmaya başlamak için her iki belgeyi de yükleyin.")
 else:
-    # NEDEN burada, spinner'dan ÖNCE: F2'nin onay mekanizması analiz
-    # BAŞLAMADAN devreye girmeli -- tarihler çelişiyorsa/yükleme sırasıyla
-    # UYUŞMUYORSA kullanıcı AÇIKÇA onaylamadan compare_documents HİÇ
-    # ÇAĞRILMAZ (bkz. components.check_chronological_order NEDEN notu).
-    proceed, order_warning = components.check_chronological_order(
-        old_file.name, new_file.name, old_meta_input, new_meta_input
-    )
-    if not proceed:
-        st.warning(order_warning)
-        order_confirmed = st.checkbox(
-            "Yükleme sırasını (Eski belge / Yeni belge) yine de bu şekilde "
-            "kullanmak istediğimi onaylıyorum.",
-            key="mk_order_override_confirm",
-        )
-        if not order_confirmed:
-            st.stop()
-
     with st.spinner("Belgeler karşılaştırılıyor..."):
         try:
             result = components.compare_documents(
@@ -69,12 +51,6 @@ else:
                 new_file.getvalue(),
                 new_file.name,
                 use_embedder=use_embedder,
-                old_version_label=old_meta_input["version_label"],
-                old_publication_date=old_meta_input["publication_date"],
-                old_effective_date=old_meta_input["effective_date"],
-                new_version_label=new_meta_input["version_label"],
-                new_publication_date=new_meta_input["publication_date"],
-                new_effective_date=new_meta_input["effective_date"],
             )
         except NoTextLayerError as exc:
             st.error(f"Belge okunamadı: {exc}")
@@ -105,6 +81,7 @@ else:
     components.render_comparison_direction(result)
     components.render_metric_cards(result)
     row_matches_bolum_filter = components.render_section_breakdown(result)
+    components.render_temporal_changes(result)
     components.render_executive_summary(result)
 
     st.divider()

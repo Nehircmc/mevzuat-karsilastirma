@@ -310,3 +310,53 @@ YASAK_HUKUKI_SONUC_IFADELERI = [
     "serbest bırakılmıştır",
     "zorunlu hâle gelmiştir",
 ]
+
+# --------------------------------------------------------------------------
+# TARİHSEL/SAYISAL DEĞİŞİKLİK TESPİTİ -- src/parsing/temporal_expressions.py
+# + src/analysis/temporal_diff.py tarafından kullanılır.
+# --------------------------------------------------------------------------
+TEMPORAL_TR_AY_ADLARI: dict[str, int] = {
+    "Ocak": 1, "Şubat": 2, "Mart": 3, "Nisan": 4, "Mayıs": 5, "Haziran": 6,
+    "Temmuz": 7, "Ağustos": 8, "Eylül": 9, "Ekim": 10, "Kasım": 11, "Aralık": 12,
+}
+
+TEMPORAL_SURE_BIRIMLERI_TR = ["gün", "hafta", "ay", "yıl"]
+
+# NEDEN "yazıyla" süre miktarlarının (örn. "otuz gün", "kırk beş gün")
+# artık desteklenmesi: MVP'de bilerek kapsam dışıydı, kullanıcı isteğiyle
+# eklendi (bkz. find_temporal_expressions NEDEN notu -- Türkçe sayı adları
+# TOPLAMSAL biçimde çözülür: "iki yüz kırk beş" = 2*100 + 40 + 5).
+# NEDEN "bir" HÂLÂ dahil (bir bilinen risk kabul edilerek): "bir gün"
+# hem "1 gün" hem "bir gün(gelecek)" gibi deyimsel bir anlam taşıyabilir
+# -- bu belirsizlik dilin kendisinden kaynaklanır, regex ile ÇÖZÜLEMEZ.
+# Ancak temporal_diff.py'nin eşik tabanlı güven mekanizması (bkz. o modül),
+# sadece DEĞİŞEN ifadeleri raporlar -- iki sürümde de AYNI deyimsel "bir
+# gün" varsa (normalized_value eşit) zaten raporlanmaz.
+TEMPORAL_TR_SAYI_KELIMELERI: dict[str, int] = {
+    "bir": 1, "iki": 2, "üç": 3, "dört": 4, "beş": 5,
+    "altı": 6, "yedi": 7, "sekiz": 8, "dokuz": 9,
+    "on": 10, "yirmi": 20, "otuz": 30, "kırk": 40, "elli": 50,
+    "altmış": 60, "yetmiş": 70, "seksen": 80, "doksan": 90,
+    "yüz": 100, "bin": 1000,
+}
+
+TEMPORAL_EXPRESSION_KIND_LABELS_TR = {
+    "DATE": "Tarih",
+    "DURATION": "Süre",
+}
+
+# NEDEN 0.5 (deneyle kalibre edildi, bkz. görev geçmişi): bir "replace"
+# cümle çiftinin KELİME benzerlik oranı bu eşiğin ALTINDAYSA, içindeki
+# tarih/süre ifadeleri "X ifadesi Y'ye değişti" diye EŞLEŞTİRİLMEZ --
+# alakasız iki cümlenin SADECE pozisyonel olarak bir "replace" bloğuna
+# düşmüş olma riski (yanlış pozitif) yüksektir. Bu durumda ifadeler
+# BAĞIMSIZ iki olgu (eski ifade kaldırıldı / yeni ifade eklendi) olarak
+# raporlanır -- veri KAYBEDİLMEZ, sadece aralarında ispatlanmamış bir
+# nedensellik İDDİA EDİLMEZ. Sentetik + gerçek PDF testleriyle doğrulandı:
+# alakasız cümle çiftleri 0.00-0.25 aralığında, gerçek tek-kelime
+# değişiklikleri 0.80 civarında benzerlik üretti (bkz. tests/
+# test_temporal_diff.py). Ağır yeniden yazılmış GERÇEK değişiklikler
+# (örn. benzerlik 0.27) bu eşiğin altına düşüp "ayrı olgu" olarak
+# raporlanabilir -- bilinçli bir ödünleşim (false negative, false
+# positive'den daha güvenli kabul edildi).
+TEMPORAL_CHANGE_MIN_SENTENCE_SIMILARITY = 0.5

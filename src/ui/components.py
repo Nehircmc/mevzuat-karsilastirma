@@ -24,11 +24,10 @@ __all__ = [
     "ComparisonRow",
     "compare_documents",
     "render_upload_widgets",
-    "render_version_metadata_widgets",
-    "check_chronological_order",
     "render_comparison_direction",
     "render_metric_cards",
     "render_section_breakdown",
+    "render_temporal_changes",
     "build_pdf_source_payload",
     "render_change_type_filter",
     "render_side_by_side",
@@ -53,116 +52,15 @@ def render_upload_widgets() -> tuple[object | None, object | None]:
     return old_file, new_file
 
 
-def render_version_metadata_widgets() -> tuple[dict, dict]:
-    """
-    Mimari Ek 1 (F1/F2): her belge için OPSİYONEL sürüm etiketi + yayım/
-    yürürlük tarihi toplar. Bir `st.expander` içinde, VARSAYILAN kapalı --
-    NEDEN: bu alanların HİÇBİRİ zorunlu değildir (bkz. check_chronological_
-    order NEDEN notu), bu yüzden basit "iki dosya yükle, sonucu gör" akışı
-    görsel olarak DEĞİŞMEZ; isteyen kullanıcı genişletip doldurur.
-
-    Boş bırakılan bir metin alanı None döner (boş string DEĞİL) ki
-    src/temporal.py::belge_gorunen_adi'nin kademeli düşüşü doğru çalışsın
-    (boş string "" version_label OLARAK sayılmamalı).
-    """
-    import streamlit as st
-
-    with st.expander("Sürüm ve tarih bilgisi (opsiyonel)"):
-        st.caption(
-            "Buraya girilen tarihler, hangi belgenin daha eski olduğunu "
-            "doğrulamak için kullanılır -- boş bırakılırsa aşağıdaki "
-            "yükleme sırası (Eski belge / Yeni belge) esas alınır."
-        )
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Eski belge**")
-            old_label = st.text_input(
-                "Sürüm etiketi", key="mk_old_version_label", placeholder="örn. 2019 sürümü"
-            )
-            old_pub = st.date_input("Yayım tarihi", value=None, key="mk_old_publication_date")
-            old_eff = st.date_input("Yürürlük tarihi", value=None, key="mk_old_effective_date")
-        with col2:
-            st.markdown("**Yeni belge**")
-            new_label = st.text_input(
-                "Sürüm etiketi", key="mk_new_version_label", placeholder="örn. 2023 sürümü"
-            )
-            new_pub = st.date_input("Yayım tarihi", value=None, key="mk_new_publication_date")
-            new_eff = st.date_input("Yürürlük tarihi", value=None, key="mk_new_effective_date")
-
-    old_meta_input = {
-        "version_label": old_label or None,
-        "publication_date": old_pub,
-        "effective_date": old_eff,
-    }
-    new_meta_input = {
-        "version_label": new_label or None,
-        "publication_date": new_pub,
-        "effective_date": new_eff,
-    }
-    return old_meta_input, new_meta_input
-
-
-def check_chronological_order(
-    old_filename: str,
-    new_filename: str,
-    old_meta_input: dict,
-    new_meta_input: dict,
-) -> tuple[bool, str | None]:
-    """
-    F2'nin onay mekanizmasını UI akışına bağlar: kullanıcı tarih girmişse
-    VE bu tarihler yükleme sırasıyla (Eski belge = slot A) ÇELİŞİYORSA --
-    ya da kendi aralarında (yayım/yürürlük) çelişiyorsa -- analiz
-    BAŞLAMADAN önce açık bir onay istenmesi GEREKTİĞİNİ bildirir (bkz.
-    src/temporal.py::determine_chronological_order NEDEN notu: "sessiz
-    varsayımın en pahalı olduğu yer burası").
-
-    Döner: (sürtünmesiz_devam_edilebilir, uyarı_metni). Hiç tarih
-    girilmemişse ya da girilen tarihler yükleme sırasıyla TUTARLIYSA ilk
-    eleman True, ikincisi None'dır -- bu durumda app.py HİÇBİR ek adım
-    eklemez (mevcut basit akış BOZULMAZ).
-    """
-    from src.models import DocumentMeta
-    from src.temporal import OrderConfidence, determine_chronological_order
-
-    old_probe = DocumentMeta(
-        doc_id="eski",
-        source_path=old_filename,
-        file_type="pdf",
-        slot="A",
-        publication_date=old_meta_input["publication_date"],
-        effective_date=old_meta_input["effective_date"],
-    )
-    new_probe = DocumentMeta(
-        doc_id="yeni",
-        source_path=new_filename,
-        file_type="pdf",
-        slot="B",
-        publication_date=new_meta_input["publication_date"],
-        effective_date=new_meta_input["effective_date"],
-    )
-    order = determine_chronological_order(old_probe, new_probe)
-
-    if order.confidence == OrderConfidence.CONFLICTING:
-        return False, order.warning
-    if (
-        order.confidence in (OrderConfidence.EFFECTIVE_DATE, OrderConfidence.PUBLICATION_DATE)
-        and order.older is not None
-        and order.older.doc_id != "eski"
-    ):
-        return False, (
-            "Girdiğiniz tarihlere göre 'Eski belge' olarak yüklediğiniz dosya "
-            "aslında DAHA YENİ görünüyor (karşılaştırma yönü ters dönebilir). "
-            "Lütfen tarihleri ya da yükleme sırasını kontrol edin."
-        )
-    return True, None
-
-
 def render_comparison_direction(result: ComparisonResult) -> None:
     """
     F4: karşılaştırma yönünü, cümle içine gömülmeden, AYRI ve AÇIK biçimde
     belirtir. F3'ün TEK görünen ad fonksiyonunu (belge_gorunen_adi) kullanır
     ki başka hiçbir yerde farklı bir isimlendirme oluşmasın (bkz.
-    src/temporal.py NEDEN notu).
+    src/temporal.py NEDEN notu). NEDEN sürüm/tarih girişi ARTIK YOK: bu
+    alanlar hiçbir işlev görmüyordu (sadece görüntüleniyordu, hiçbir
+    doğrulama tetiklemiyordu) -- kaldırıldı, `belge_gorunen_adi` HER ZAMAN
+    dosya adına düşerek çalışmaya devam eder (F3'ün kademe-3'ü).
     """
     import streamlit as st
 
@@ -259,6 +157,33 @@ def render_section_breakdown(result: ComparisonResult) -> Callable[[ComparisonRo
         return bolum == selected
 
     return matches_bolum
+
+
+def render_temporal_changes(result: ComparisonResult) -> None:
+    """
+    Mimari Ek 2: "Tarihsel/Sayısal Değişiklikler" bölümü -- pipeline.py::
+    ComparisonResult.temporal_changes'i (bkz. o alanın NEDEN notu: ChangeType'tan
+    BAĞIMSIZ üçüncü bir boyut) render eder.
+
+    NEDEN hiç değişiklik yokken de bölüm başlığı GÖRÜNÜR kalır (erken
+    `return` ile TAMAMEN gizlenmez): render_comparison_direction'daki AYNI
+    ilke (F4 NEDEN notu) -- kullanıcının "bu özellik hiç çalışmadı mı,
+    yoksa gerçekten hiç tarih/süre değişikliği mi yok" belirsizliğini
+    önler.
+    """
+    import streamlit as st
+
+    from src.reporting.metrics import build_temporal_changes_table
+
+    st.markdown("##### Tarihsel/Sayısal Değişiklikler")
+
+    if not result.temporal_changes:
+        st.caption("Madde metinlerinde tarih/süre ifadesi değişikliği bulunamadı.")
+        return
+
+    st.caption(f"{len(result.temporal_changes)} değişiklik bulundu.")
+    table = build_temporal_changes_table(result)
+    st.dataframe(table, hide_index=True, use_container_width=True)
 
 
 def render_change_type_filter() -> Callable[[ComparisonRow], bool]:

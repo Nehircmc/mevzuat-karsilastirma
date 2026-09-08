@@ -16,12 +16,18 @@ from __future__ import annotations
 import pandas as pd
 
 from src.analysis.pipeline import ComparisonResult
-from src.config import CHANGE_TYPE_LABELS_TR
-from src.models import ChangeType, Section
+from src.config import CHANGE_TYPE_LABELS_TR, TEMPORAL_EXPRESSION_KIND_LABELS_TR
+from src.models import ChangeType, Section, TextUnit
 
 _SUMMARY_COLUMNS = ["Değişim Türü", "Sayı", "Yüzde"]
 _STRUCTURAL_COLUMNS = ["Yapısal Değişiklik", "Sayı"]
 _SECTION_BREAKDOWN_COLUMNS = ["Bölüm"] + [CHANGE_TYPE_LABELS_TR[ct.value] for ct in ChangeType]
+_TEMPORAL_CHANGES_COLUMNS = ["Madde", "Tür", "Eski Değer", "Yeni Değer", "Sayfa"]
+# NEDEN "—" (em dash, boş string DEĞİL): bir tablo hücresinin boş mu yoksa
+# "bu alan bu satırda İLGİLİ DEĞİL" mi olduğu görsel olarak AYIRT edilsin
+# -- örn. "eklendi" bir değişiklikte "Eski Değer" hücresi hiç yoktu, "boş
+# unutulmuş" gibi görünmemeli.
+_TEMPORAL_BOS_DEGER = "—"
 # NEDEN ayrı bir sabit (özel karakter/boşluk İÇERMEYEN): heading_path'i
 # olmayan (KISIM/BÖLÜM tespit edilemeyen) bir Section'ı SESSİZCE tablodan
 # DÜŞÜRMEK yerine ayrı bir kovaya toplar -- aksi halde bölüm başına
@@ -163,6 +169,59 @@ def build_section_breakdown(result: ComparisonResult) -> pd.DataFrame:
             row_dict[CHANGE_TYPE_LABELS_TR[change_type.value]] = sayac[bolum][change_type]
         rows.append(row_dict)
     return pd.DataFrame(rows, columns=_SECTION_BREAKDOWN_COLUMNS)
+
+
+def _ilk_sayfa_no(units: list[TextUnit]) -> int | None:
+    """
+    render_source_link'teki (src/ui/components.py) AYNI ilk-dolu-sayfa
+    deseni -- DOCX'te (sayfa kavramı YOK, bkz. o modülün NEDEN notu) veya
+    provenance eksikse None döner.
+    """
+    return next((u.page_no for u in units if u.page_no is not None), None)
+
+
+def build_temporal_changes_table(result: ComparisonResult) -> pd.DataFrame:
+    """
+    Mimari Ek 2 -- tarihsel/sayısal değişiklik dökümü: her TemporalChange
+    (bkz. pipeline.py::ComparisonResult.temporal_changes) için bir satır.
+
+    NEDEN "paired" olmayan (sadece kaldırılan VEYA sadece eklenen)
+    değişiklikler de AYNI tabloda, ayrı bir tabloya BÖLÜNMEDEN: her ikisi
+    de kullanıcının "bu maddede tarih/süre ile ilgili ne değişti" sorusuna
+    cevaptır -- eşleştirilmiş olup olmadığı "Eski Değer"/"Yeni Değer"
+    sütunlarından (biri "—" ise eşleştirilmemiş) zaten ANLAŞILIR, ayrı bir
+    tablo kullanıcıya aynı bilgiyi iki yerde aratırdı.
+
+    NEDEN sayfa numarası OLD/NEW sırasıyla düşer (biri yoksa diğerine):
+    "hangi sayfada geçiyor" sorusunun en doğal cevabı DEĞİŞİKLİĞİN
+    KAYNAĞI olan cümledir -- kaldırılan bir ifade için bu HER ZAMAN eski
+    belgedeki sayfadır, eklenen için yeni belgedeki sayfadır; eşleştirilmiş
+    (paired) bir değişiklikte önce eski belge tercih edilir (kullanıcı
+    genelde "nereden değişti" sorusunu sorar).
+    """
+    rows = []
+    for change in result.temporal_changes:
+        madde_eski = change.match.old.madde_no
+        madde_yeni = change.match.new.madde_no
+        madde_etiketi = f"MADDE {madde_eski}" if madde_eski == madde_yeni else f"MADDE {madde_eski} → {madde_yeni}"
+
+        kind = change.old.kind if change.old is not None else change.new.kind
+        sayfa = None
+        if change.old_sentence is not None:
+            sayfa = _ilk_sayfa_no(change.old_sentence.units)
+        if sayfa is None and change.new_sentence is not None:
+            sayfa = _ilk_sayfa_no(change.new_sentence.units)
+
+        rows.append(
+            {
+                "Madde": madde_etiketi,
+                "Tür": TEMPORAL_EXPRESSION_KIND_LABELS_TR[kind.value],
+                "Eski Değer": change.old.text if change.old is not None else _TEMPORAL_BOS_DEGER,
+                "Yeni Değer": change.new.text if change.new is not None else _TEMPORAL_BOS_DEGER,
+                "Sayfa": sayfa if sayfa is not None else _TEMPORAL_BOS_DEGER,
+            }
+        )
+    return pd.DataFrame(rows, columns=_TEMPORAL_CHANGES_COLUMNS)
 
 
 def build_detail_dataframe(result: ComparisonResult) -> pd.DataFrame:
