@@ -1,0 +1,130 @@
+[
+  {
+    "threshold": 0.5,
+    "correct": 13,
+    "n": 15,
+    "accuracy": 0.8666666666666667,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "EMBEDDING": 2,
+      "TITLE_ONLY": 5,
+      "UNMATCHED": 1
+    },
+    "n_embedding_matches": 2,
+    "errors": [
+      [
+        "arsivleme",
+        "REMOVED",
+        "MODIFIED"
+      ],
+      [
+        "acik_veri_portali",
+        "ADDED",
+        "MODIFIED"
+      ]
+    ]
+  },
+  {
+    "threshold": 0.55,
+    "correct": 13,
+    "n": 15,
+    "accuracy": 0.8666666666666667,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "EMBEDDING": 2,
+      "TITLE_ONLY": 5,
+      "UNMATCHED": 1
+    },
+    "n_embedding_matches": 2,
+    "errors": [
+      [
+        "arsivleme",
+        "REMOVED",
+        "MODIFIED"
+      ],
+      [
+        "acik_veri_portali",
+        "ADDED",
+        "MODIFIED"
+      ]
+    ]
+  },
+  {
+    "threshold": 0.6,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  },
+  {
+    "threshold": 0.65,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  },
+  {
+    "threshold": 0.7,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  },
+  {
+    "threshold": 0.75,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  },
+  {
+    "threshold": 0.8,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  },
+  {
+    "threshold": 0.85,
+    "correct": 15,
+    "n": 15,
+    "accuracy": 1.0,
+    "methods": {
+      "NUMBER_AND_TITLE": 7,
+      "UNMATCHED": 3,
+      "TITLE_ONLY": 5
+    },
+    "n_embedding_matches": 0,
+    "errors": []
+  }
+]
