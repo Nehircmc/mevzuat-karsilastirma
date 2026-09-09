@@ -13,3 +13,34 @@ maxUploadSize = 50
 # karşılaştırma potansiyel olarak hassas/gizli belgelerle kullanılabilir.
 [browser]
 gatherUsageStats = false
+
+# --------------------------------------------------------------------------
+# TEMA -- açık, kurumsal görünüm (SADECE görsel; hiçbir iş mantığını
+# etkilemez, bkz. src/ui/styles.py ile birlikte çalışır)
+# --------------------------------------------------------------------------
+# NEDEN "base" açıkça "light" sabitleniyor: bu bölüm hiç OLMASAYDI Streamlit
+# ziyaretçinin işletim sistemi/tarayıcı tercihini izler -- koyu modda olan
+# bir kullanıcıda uygulama İSTENMEDEN koyu temada açılırdı. Hukuki/mevzuat
+# metni okumak öngörülebilir, yüksek kontrastlı bir açık tema gerektirir;
+# bu yüzden ziyaretçinin sistem tercihi ne olursa olsun sabitleniyor.
+#
+# NEDEN primaryColor #1A56DB: src/config.py::COLOR_PALETTE["MOVED"] ile
+# BİLEREK AYNI değer -- uygulamanın birincil vurgu rengiyle "Bölümü
+# Değişti" rozetinin rengi tutarlı olsun diye (iki farklı kurumsal mavi
+# TANIMLAMAK yerine tek bir kaynağı iki yerde tekrarlamak). DEĞİŞMEDİ.
+#
+# NEDEN background/secondaryBackground artık SAF BEYAZ/GRİ DEĞİL, sıcak
+# "kağıt" tonları (#FBFAF8/#F3EFE9): amaç resmî bir belgeyi andıran, gözü
+# az yoran bir zemin -- assets/styles.css'teki kehribar (#B45309) vurgu
+# rengiyle aynı sıcak aileden, ikisi arasında görsel bir ÇATIŞMA olmasın
+# diye BİLİNÇLİ eşleştirildi. Hiçbiri src/config.py::COLOR_PALETTE
+# değerleriyle çakışmıyor (bu dosya assets/styles.css'teki "renk tek
+# kaynaktan gelsin" testinin kapsamı DIŞINDA -- o test sadece statik CSS
+# dosyasını tarar, bkz. tests/test_ui.py::test_static_css_renk_kodu_icermez).
+[theme]
+base = "light"
+primaryColor = "#1A56DB"
+backgroundColor = "#FBFAF8"
+secondaryBackgroundColor = "#F3EFE9"
+textColor = "#1F2937"
+font = "sans-serif"

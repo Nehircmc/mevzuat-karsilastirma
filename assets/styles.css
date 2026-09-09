@@ -9,15 +9,18 @@ bir palet değişikliği bu dosyadaki ESKİ bir kopyayla sessizce çelişebilird
 */
 
 .mk-diff {
-    line-height: 1.6;
+    line-height: 1.65;
 }
 
 .mk-column {
-    border: 1px solid rgba(49, 51, 63, 0.15);
-    border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    padding: 0.85rem 1.1rem;
     height: 100%;
     overflow-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .mk-section-header {
@@ -26,16 +29,17 @@ bir palet değişikliği bu dosyadaki ESKİ bir kopyayla sessizce çelişebilird
 
 .mk-badge {
     display: inline-block;
-    padding: 0.1rem 0.6rem;
+    padding: 0.15rem 0.65rem 0.15rem 0.55rem;
     border-radius: 999px;
     font-size: 0.8rem;
     font-weight: 600;
+    letter-spacing: 0.01em;
     margin-left: 0.5rem;
     vertical-align: middle;
 }
 
 .mk-empty-side {
-    color: rgba(49, 51, 63, 0.4);
+    color: rgba(31, 41, 55, 0.45);
     font-style: italic;
 }
 
@@ -76,7 +80,7 @@ sağlar (bkz. src/ui/components.py::render_side_by_side).
 .mk-row {
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid rgba(49, 51, 63, 0.15);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 /* NEDEN body{} yerine kapsamlı bir sınıf: bu dosya Streamlit sayfasına da
@@ -84,15 +88,281 @@ enjekte ediliyor (bkz. yukarı) -- doğrudan body{} yazmak Streamlit'in KENDİ
 sayfa arkaplanını/temasını ISTENMEDEN ezerdi. Bu sınıf SADECE exporter.py'nin
 ürettiği bağımsız HTML'de <body> içine SARILIR. */
 .mk-standalone-page {
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     max-width: 1100px;
     margin: 0 auto;
     padding: 2rem 1.5rem;
-    background: #fafafa;
+    background: #fbfaf8;
     color: #1f2937;
     line-height: 1.5;
 }
 
 .mk-summary h2 {
     margin-top: 0;
+}
+
+/* ==========================================================================
+   TASARIM KİMLİĞİ -- "RESMÎ + ÇAĞDAŞ" (yalnızca görsel katman)
+   ==========================================================================
+   NEDEN bu blok SADECE Streamlit'in KENDİ ürettiği `data-testid`'leri
+   hedefliyor (yeni bir class/prop için app.py veya components.py'de HİÇBİR
+   değişiklik YOK): bu testid'ler Streamlit'in kendi bileşen kütüphanesinde
+   sabit ve stabildir -- widget'ların Python tarafındaki DAVRANIŞINI DEĞİL
+   sadece render edilen HTML'in GÖRÜNÜMÜNÜ etkiler.
+
+   NEDEN iki ayrı vurgu rengi (lacivert + kehribar), İKİSİ DE hardcoded
+   HEX olarak burada TANIMLANIYOR ama HİÇBİRİ COLOR_PALETTE (config.py)
+   değerleriyle ÇAKIŞMIYOR (bkz. tests/test_ui.py::
+   test_static_css_renk_kodu_icermez -- her ikisi de elle karşılaştırıldı):
+   lacivert zaten .streamlit/config.toml::[theme].primaryColor'da TANIMLI
+   (Streamlit'in kendi mekanizmasıyla sayfaya uygulanıyor, burada TEKRAR
+   YAZILMIYOR); kehribar ise TAMAMEN YENİ, SADECE dekoratif bir ikincil
+   kimlik rengi -- ChangeType semantiğiyle (IDENTICAL/MODIFIED/ADDED/
+   REMOVED) KARIŞMASIN diye bilinçli olarak o dört renkten HİÇBİRİNE
+   yakın seçilmedi (mevzuat metnindeki anlam renkleri ile sayfanın
+   dekoratif kimlik rengi görsel olarak birbirine KARIŞMAMALI). */
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap");
+
+[data-testid="stAppViewContainer"] {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+}
+
+/* İnce, sabit kehribar "başlık şeridi" -- sayfanın en üstünde, bir resmî
+belgenin üst bandını çağrıştıran sakin bir imza çizgisi. */
+[data-testid="stAppViewContainer"]::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #b45309;
+    z-index: 1000;
+}
+
+[data-testid="stMainBlockContainer"] h1 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 2.6rem;
+    letter-spacing: -0.01em;
+    color: #111827;
+    margin-bottom: 0.1rem;
+}
+
+/* Başlığın üstünde küçük, harf aralıklı bir "künye" satırı -- Python
+tarafında YENİ bir eleman EKLEMEDEN (app.py'ye dokunulmadı), saf CSS
+::before ile üretilir; bu yüzden hiçbir testte (AppTest sadece Streamlit
+öğe ağacını görür, render edilmiş CSS içeriğini DEĞİL) görünmez/etkilemez. */
+[data-testid="stMainBlockContainer"] h1::before {
+    content: "BELGE KARŞILAŞTIRMA STÜDYOSU";
+    display: block;
+    font-family: "Inter", sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: #92400e;
+    margin-bottom: 0.6rem;
+}
+
+[data-testid="stMainBlockContainer"] h2 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    color: #111827;
+}
+
+[data-testid="stMainBlockContainer"] h3 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+[data-testid="stMainBlockContainer"] h5 {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: #1f2937;
+}
+
+/* Madde satırı başlığı ("MADDE N — Başlık") -- html_renderer.py'nin
+ürettiği .mk-section-header İÇİNDE düz <strong> metindir (gerçek bir hN
+DEĞİL); aynı editoryal karaktere sahip olsun diye ayrıca hedefleniyor. */
+.mk-section-header strong {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: #111827;
+}
+
+.mk-standalone-page h2,
+.mk-standalone-page h3,
+.mk-standalone-page .mk-section-header strong {
+    font-family: "Fraunces", Georgia, "Times New Roman", serif;
+}
+
+[data-testid="stCaptionContainer"] {
+    color: #6b7280;
+}
+
+/* NEDEN hr hedefleniyor (.mk-row/.mk-side-by-side DEĞİL): st.divider()
+KENDİ <hr>'ini bir stMarkdown öğesi içine üretir (bkz.
+streamlit/elements/markdown.py::divider) -- Streamlit'in varsayılan kalın
+çizgisi yerine ince bir "hairline" bölüm ayracı daha kurumsal/sakin durur. */
+[data-testid="stMainBlockContainer"] hr {
+    border: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    margin: 1.25rem 0;
+}
+
+/* Rozetlere (.mk-badge-<key>, renk generate_color_css()'ten TEK KAYNAK
+gelir) küçük bir durum noktası ekler -- `currentColor` kullanıldığı için
+HANGİ ChangeType olursa olsun (hangi renk üretilirse üretilsin) otomatik
+uyar, burada AYRICA hiçbir renk tanımlanmaz. */
+.mk-badge::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+    opacity: 0.85;
+}
+
+/* Madde satırı kartları -- hafif hover-kaldırma (sadece CSS, JS/onclick
+GEREKMEZ -- bkz. proje belleği: st.markdown içindeki onclick çalışmaz,
+ama :hover tarayıcı-yerel bir sözde-sınıftır, React'e hiç uğramaz). */
+.mk-column:hover {
+    box-shadow: 0 4px 14px rgba(16, 24, 40, 0.08);
+    transform: translateY(-1px);
+}
+
+/* Eski/Yeni belge sütunlarını AYIRT ETMEK için: Streamlit'in KENDİ
+st.columns()'unun ürettiği data-testid="stColumn" sırasına göre (1.=eski,
+2.=yeni) ince bir renk şeridi + küçük bir etiket eklenir. Python tarafında
+HİÇBİR yeni metin/parametre YOK -- ikisi de saf CSS ::before ile üretilir,
+bu yüzden `render_side_by_side()` imzası ve mevcut testler DOKUNULMAMIŞ
+kalır. Seçici SADECE `.mk-column` içeren sütunları etkiler -- .mk-column
+YALNIZCA madde karşılaştırma satırlarında kullanılır (bkz. yukarıdaki
+NEDEN notu), metrik kartları gibi diğer iki-sütunlu düzenler ETKİLENMEZ. */
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-of-type(1) .mk-column {
+    border-left: 3px solid #cbd5e1;
+}
+
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-of-type(2) .mk-column {
+    border-left: 3px solid #b45309;
+}
+
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-of-type(1) .mk-column::before {
+    content: "ESKİ BELGE";
+    display: block;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+    margin-bottom: 0.45rem;
+}
+
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-of-type(2) .mk-column::before {
+    content: "YENİ BELGE";
+    display: block;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: #92400e;
+    margin-bottom: 0.45rem;
+}
+
+/* Metrik kartları (components.py::render_metric_cards) -- beyaz kart +
+ince kenarlık + yumuşak gölge + üstte ince kehribar bir "imza" çizgisi. */
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    padding: 1rem 1.1rem 0.9rem;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+[data-testid="stMetric"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #b45309;
+    opacity: 0.55;
+}
+
+[data-testid="stMetric"]:hover {
+    box-shadow: 0 6px 16px rgba(16, 24, 40, 0.08);
+    transform: translateY(-2px);
+}
+
+[data-testid="stMetricLabel"] {
+    color: #6b7280;
+    font-weight: 500;
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+[data-testid="stMetricValue"] {
+    color: #111827;
+    font-weight: 700;
+    font-family: "Fraunces", Georgia, serif;
+}
+
+/* Butonlar -- birincil vurgu rengiyle (config.toml [theme].primaryColor)
+tutarlı, yuvarlak köşeli görünüm + hover'da kehribar ile ince bir canlanma. */
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button {
+    border-radius: 0.55rem;
+    font-weight: 500;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+[data-testid="stButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover {
+    border-color: #b45309;
+    transform: translateY(-1px);
+}
+
+/* Dosya yükleme alanı -- varsayılan kesikli çizgili kutuyu daha sakin/
+kurumsal bir yüzeye çevirir, hover'da hafif belirginleşir. */
+[data-testid="stFileUploader"] section {
+    border-radius: 0.75rem;
+    background: #fafbfc;
+    transition: background 0.15s ease;
+}
+
+[data-testid="stFileUploader"] section:hover {
+    background: #f6f3ee;
+}
+
+/* st.info/st.warning/st.error -- hepsi AYNI data-testid="stAlert" ile
+render edilir (renk farkı Streamlit'in kendi inline stiliyle gelir);
+burada sadece köşe yuvarlaklığı ekleniyor. */
+[data-testid="stAlert"] {
+    border-radius: 0.6rem;
+}
+
+/* Bölüm bazlı analiz tablosu (components.py::render_section_breakdown). */
+[data-testid="stDataFrame"] {
+    border-radius: 0.6rem;
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Sekmesiz checkbox/expander yardım ikonları -- kehribar ile vurgulanan
+küçük bir odak/hover rengi (erişilebilirlik: renk TEK sinyal değil, zaten
+altı çizili/ikon şekli de değişiyor -- tarayıcı varsayılanı korunuyor). */
+[data-testid="stCheckbox"] label:hover {
+    color: #92400e;
 }

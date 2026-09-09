@@ -18,7 +18,7 @@ import streamlit as st
 from src.ingestion.base import CorruptDocumentError, NoTextLayerError
 from src.ui import components, styles
 
-st.set_page_config(page_title="Mevzuat Karşılaştırma", layout="wide")
+st.set_page_config(page_title="Mevzuat Karşılaştırma", page_icon="⚖️", layout="wide")
 styles.inject()
 
 st.title("Mevzuat Karşılaştırma")
